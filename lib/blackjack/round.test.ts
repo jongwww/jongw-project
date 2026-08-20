@@ -2,6 +2,7 @@ import { expect, test } from "vitest";
 
 import {
   canDoubleDown,
+  canSplit,
   canTakeInsurance,
   dealerStep,
   declineInsurance,
@@ -9,6 +10,7 @@ import {
   hit,
   isValidBet,
   placeBet,
+  split,
   stand,
   startBetting,
   startNextRound,
@@ -264,6 +266,65 @@ test("인슈어런스 제안 단계가 아니면 인슈어런스 시도는 상�
   expect(declineInsurance(state)).toEqual(state);
 });
 
+test("같은 랭크 두 장이고 자금이 충분하면 스플릿을 선택할 수 있다", () => {
+  const started = placeBet(startBetting(1000), 100, deckOf("8", "8", "9", "7"));
+
+  expect(canSplit(started)).toBe(true);
+});
+
+test("다른 랭크면 스플릿을 선택할 수 없다", () => {
+  const started = placeBet(startBetting(1000), 100, deckOf("8", "9", "9", "7"));
+
+  expect(canSplit(started)).toBe(false);
+});
+
+test("자금이 배팅액의 2배보다 적으면 스플릿을 선택할 수 없다", () => {
+  const started = placeBet(startBetting(150), 100, deckOf("8", "8", "9", "7"));
+
+  expect(canSplit(started)).toBe(false);
+});
+
+test("스플릿하면 두 손이 생기고 각각 카드 2장으로 시작하며 더블다운은 선택할 수 없다", () => {
+  const started = placeBet(
+    startBetting(1000),
+    100,
+    deckOf("8", "8", "9", "7", "5", "3")
+  );
+
+  const next = split(started);
+
+  expect(next.hand).toBeNull();
+  expect(next.split?.hands[0].cards).toEqual([c("8"), c("5")]);
+  expect(next.split?.hands[1].cards).toEqual([c("8"), c("3")]);
+  expect(next.phase).toBe("player-turn");
+  expect(canDoubleDown(next)).toBe(false);
+});
+
+test("스플릿한 두 손을 진행해 정산하면 각 손의 결과에 따라 자금이 조정된다", () => {
+  const started = placeBet(
+    startBetting(1000),
+    100,
+    deckOf("8", "8", "7", "6", "5", "3", "2", "9", "4")
+  );
+
+  const afterSplit = split(started);
+  const afterHand1 = stand(hit(afterSplit));
+  const afterHand2 = stand(hit(afterHand1));
+  const afterOneDraw = dealerStep(afterHand2);
+  const finished = dealerStep(afterOneDraw);
+
+  expect(finished.phase).toBe("result");
+  expect(finished.split?.hands[0].outcome).toBe("dealer-win");
+  expect(finished.split?.hands[1].outcome).toBe("player-win");
+  expect(finished.funds).toBe(1000);
+});
+
+test("유효하지 않은 스플릿 시도는 상태를 바꾸지 않는다", () => {
+  const state = startBetting(1000);
+
+  expect(split(state)).toEqual(state);
+});
+
 test("새 판을 시작하면 배팅과 카드는 초기화되고 자금은 유지된다", () => {
   const finished = placeBet(startBetting(1000), 100, deckOf("A", "K", "9", "7"));
 
@@ -273,6 +334,7 @@ test("새 판을 시작하면 배팅과 카드는 초기화되고 자금은 유�
     funds: 1150,
     bet: null,
     hand: null,
+    split: null,
     phase: "betting",
     lastInsuranceResult: null,
   });

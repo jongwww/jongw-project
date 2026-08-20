@@ -9,6 +9,7 @@ import { insuranceAmount, isValidBet } from "@/lib/blackjack/round";
 import {
   advance,
   canDoubleDown,
+  canSplit,
   canTakeInsurance,
   dealerStep,
   declineInsurance,
@@ -16,6 +17,7 @@ import {
   hit,
   isSessionOver,
   placeBet,
+  split,
   stand,
   startNewSession,
   startSession,
@@ -99,10 +101,16 @@ export function BlackjackGame() {
 
   const round = state.round;
   const hand = round.hand;
+  const splitState = round.split;
   const player = hand ? evaluateHand(hand.playerCards) : null;
-  const dealer = hand ? evaluateHand(hand.dealerCards) : null;
   const betAmount = Number(betInput);
   const sessionOver = isSessionOver(state);
+
+  const dealerCards = splitState ? splitState.dealerCards : hand?.dealerCards;
+  const dealerHoleRevealed = splitState
+    ? splitState.dealerHoleRevealed
+    : hand?.dealerHoleRevealed ?? false;
+  const dealer = dealerCards ? evaluateHand(dealerCards) : null;
 
   return (
     <div className="flex w-full max-w-md flex-col items-center gap-6 py-16">
@@ -140,40 +148,71 @@ export function BlackjackGame() {
         </p>
       )}
 
-      {hand && player && dealer && state.phase !== "session-over" && (
-        <>
-          <section
-            aria-label="딜러 카드"
-            className="flex flex-col items-center gap-2"
-          >
-            <p className="text-sm text-muted-foreground">
-              딜러 {hand.dealerHoleRevealed ? dealer.total : ""}
-            </p>
-            <div className="flex gap-2">
-              {hand.dealerCards.map((card, index) => (
-                <CardFace
-                  key={index}
-                  card={card}
-                  hidden={index === 1 && !hand.dealerHoleRevealed}
-                />
-              ))}
-            </div>
-          </section>
+      {dealerCards && dealer && state.phase !== "session-over" && (
+        <section
+          aria-label="딜러 카드"
+          className="flex flex-col items-center gap-2"
+        >
+          <p className="text-sm text-muted-foreground">
+            딜러 {dealerHoleRevealed ? dealer.total : ""}
+          </p>
+          <div className="flex gap-2">
+            {dealerCards.map((card, index) => (
+              <CardFace
+                key={index}
+                card={card}
+                hidden={index === 1 && !dealerHoleRevealed}
+              />
+            ))}
+          </div>
+        </section>
+      )}
 
-          <section
-            aria-label="플레이어 카드"
-            className="flex flex-col items-center gap-2"
-          >
-            <p className="text-sm text-muted-foreground">
-              플레이어 {player.total} (배팅액 {round.bet})
-            </p>
-            <div className="flex gap-2">
-              {hand.playerCards.map((card, index) => (
-                <CardFace key={index} card={card} />
-              ))}
-            </div>
-          </section>
-        </>
+      {hand && player && !splitState && state.phase !== "session-over" && (
+        <section
+          aria-label="플레이어 카드"
+          className="flex flex-col items-center gap-2"
+        >
+          <p className="text-sm text-muted-foreground">
+            플레이어 {player.total} (배팅액 {round.bet})
+          </p>
+          <div className="flex gap-2">
+            {hand.playerCards.map((card, index) => (
+              <CardFace key={index} card={card} />
+            ))}
+          </div>
+        </section>
+      )}
+
+      {splitState && state.phase !== "session-over" && (
+        <div className="flex gap-6">
+          {splitState.hands.map((splitHand, index) => {
+            const evaluated = evaluateHand(splitHand.cards);
+            const isActive =
+              splitState.activeHandIndex === index &&
+              splitHand.status === "active";
+            return (
+              <section
+                key={index}
+                aria-label={`손 ${index + 1}`}
+                className="flex flex-col items-center gap-2"
+              >
+                <p className="text-sm text-muted-foreground">
+                  손 {index + 1} {evaluated.total} (배팅액 {round.bet})
+                  {isActive ? " · 진행 중" : ""}
+                  {splitHand.outcome
+                    ? ` · ${OUTCOME_LABEL[splitHand.outcome]}`
+                    : ""}
+                </p>
+                <div className="flex gap-2">
+                  {splitHand.cards.map((card, cardIndex) => (
+                    <CardFace key={cardIndex} card={card} />
+                  ))}
+                </div>
+              </section>
+            );
+          })}
+        </div>
       )}
 
       {round.lastInsuranceResult && (
@@ -228,6 +267,14 @@ export function BlackjackGame() {
               더블다운
             </Button>
           )}
+          {canSplit(state) && (
+            <Button
+              variant="outline"
+              onClick={() => setState((current) => split(current))}
+            >
+              스플릿
+            </Button>
+          )}
         </div>
       )}
 
@@ -235,11 +282,19 @@ export function BlackjackGame() {
         <p className="text-sm text-muted-foreground">딜러가 카드를 받는 중...</p>
       )}
 
-      {state.phase === "result" && hand?.outcome && (
+      {state.phase === "result" && (hand?.outcome || splitState) && (
         <div className="flex flex-col items-center gap-3">
-          <p className="text-xl font-semibold" role="status">
-            {OUTCOME_LABEL[hand.outcome]}
-          </p>
+          {hand?.outcome && (
+            <p className="text-xl font-semibold" role="status">
+              {OUTCOME_LABEL[hand.outcome]}
+            </p>
+          )}
+          {splitState && (
+            <p className="text-xl font-semibold" role="status">
+              스플릿 결과: 손 1 {OUTCOME_LABEL[splitState.hands[0].outcome!]} ·
+              손 2 {OUTCOME_LABEL[splitState.hands[1].outcome!]}
+            </p>
+          )}
           <Button onClick={goToNextStep}>
             {sessionOver ? "세션 결과 보기" : "다음 판"}
           </Button>
@@ -272,8 +327,8 @@ export function BlackjackGame() {
               </tr>
             </thead>
             <tbody>
-              {state.records.map((record) => (
-                <tr key={record.handNumber}>
+              {state.records.map((record, index) => (
+                <tr key={index}>
                   <td>{record.handNumber}</td>
                   <td>{record.bet}</td>
                   <td>{OUTCOME_LABEL[record.outcome]}</td>

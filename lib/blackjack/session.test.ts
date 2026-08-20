@@ -4,12 +4,16 @@ import {
   MAX_HANDS,
   advance,
   canDoubleDown,
+  canSplit,
   canTakeInsurance,
+  dealerStep,
   declineInsurance,
   doubleDown,
   hit,
   isSessionOver,
   placeBet,
+  split,
+  stand,
   startNewSession,
   startSession,
   takeInsurance,
@@ -103,6 +107,33 @@ test("새 세션을 시작하면 시작 자금으로 되돌아가고 기록이 �
   const restarted = startNewSession(finished);
 
   expect(restarted).toEqual(startSession(1000));
+});
+
+test("스플릿한 판은 세션 기록에 두 손이 각각 남지만 판 수는 1판만 오른다", () => {
+  const started = placeBet(
+    startSession(1000),
+    100,
+    deckOf("8", "8", "7", "6", "5", "3", "2", "9", "4")
+  );
+
+  const afterSplit = split(started);
+  const afterHand1 = stand(hit(afterSplit));
+  const afterHand2 = stand(hit(afterHand1));
+  const afterOneDraw = dealerStep(afterHand2);
+  const finished = dealerStep(afterOneDraw);
+
+  expect(finished.phase).toBe("result");
+  expect(finished.handNumber).toBe(1);
+  expect(finished.records).toEqual([
+    { handNumber: 1, bet: 100, outcome: "dealer-win", fundsAfter: 1000 },
+    { handNumber: 1, bet: 100, outcome: "player-win", fundsAfter: 1000 },
+  ]);
+});
+
+test("같은 랭크 두 장이 아니면 스플릿을 선택할 수 없다", () => {
+  const started = placeBet(startSession(1000), 100, deckOf("8", "9", "9", "7"));
+
+  expect(canSplit(started)).toBe(false);
 });
 
 test("히트한 뒤에는 더블다운을 선택할 수 없다", () => {

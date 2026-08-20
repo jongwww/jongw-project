@@ -195,6 +195,60 @@ test("자금이 배팅액의 1.5배보다 적으면 인슈어런스를 들 수 �
   ).toBeInTheDocument();
 });
 
+test("같은 랭크 두 장이면 스플릿할 수 있고, 스플릿하면 두 손이 나타나고 더블다운은 사라진다", () => {
+  mockDeck(c("8"), c("8"), c("7"), c("6"), c("5"), c("3"));
+
+  render(<BlackjackGame />);
+  placeBet("100");
+  fireEvent.click(screen.getByRole("button", { name: "스플릿" }));
+
+  expect(screen.getByLabelText("손 1")).toBeInTheDocument();
+  expect(screen.getByLabelText("손 2")).toBeInTheDocument();
+  expect(
+    screen.queryByRole("button", { name: "더블다운" })
+  ).not.toBeInTheDocument();
+  expect(
+    screen.queryByRole("button", { name: "스플릿" })
+  ).not.toBeInTheDocument();
+});
+
+test("스플릿한 두 손을 각각 진행하면 손마다 결과가 표시되고 자금이 함께 정산된다", async () => {
+  mockDeck(
+    c("8"),
+    c("8"),
+    c("7"),
+    c("6"),
+    c("5"),
+    c("3"),
+    c("2"),
+    c("9"),
+    c("4")
+  );
+
+  render(<BlackjackGame />);
+  placeBet("100");
+  fireEvent.click(screen.getByRole("button", { name: "스플릿" }));
+
+  fireEvent.click(screen.getByRole("button", { name: "히트" }));
+  fireEvent.click(screen.getByRole("button", { name: "스탠드" }));
+  fireEvent.click(screen.getByRole("button", { name: "히트" }));
+  fireEvent.click(screen.getByRole("button", { name: "스탠드" }));
+
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(1000);
+  });
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(1000);
+  });
+
+  expect(screen.getByRole("status")).toHaveTextContent("손 1 패");
+  expect(screen.getByRole("status")).toHaveTextContent("손 2 승");
+  expect(screen.getByText(/보유 자금 1000/)).toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole("button", { name: "다음 판" }));
+  expect(screen.getByText(/1판째/)).toBeInTheDocument();
+});
+
 test("자금을 모두 잃으면 세션이 끝나고, 세션 결과 화면에 판별 기록과 요약이 보인다", () => {
   mockDeck(c("9"), c("7"), c("K"), c("A"));
 

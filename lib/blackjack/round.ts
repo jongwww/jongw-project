@@ -7,6 +7,14 @@ import {
   type GameState as HandState,
 } from "./game";
 import { evaluateHand } from "./hand";
+import {
+  canSplit as canSplitCards,
+  createSplitState,
+  dealerStep as splitDealerStep,
+  hit as splitHit,
+  stand as splitStand,
+  type SplitState,
+} from "./split";
 import type { Card, Outcome } from "./types";
 
 export type RoundPhase =
@@ -22,6 +30,7 @@ export interface RoundState {
   funds: number;
   bet: number | null;
   hand: HandState | null;
+  split: SplitState | null;
   phase: RoundPhase;
   lastInsuranceResult: InsuranceResult | null;
 }
@@ -31,6 +40,7 @@ export function startBetting(funds: number): RoundState {
     funds,
     bet: null,
     hand: null,
+    split: null,
     phase: "betting",
     lastInsuranceResult: null,
   };
@@ -57,6 +67,16 @@ export function canDoubleDown(state: RoundState): boolean {
     state.phase === "player-turn" &&
     state.hand !== null &&
     state.hand.playerCards.length === 2 &&
+    state.bet !== null &&
+    state.bet * 2 <= state.funds
+  );
+}
+
+export function canSplit(state: RoundState): boolean {
+  return (
+    state.phase === "player-turn" &&
+    state.hand !== null &&
+    canSplitCards(state.hand.playerCards) &&
     state.bet !== null &&
     state.bet * 2 <= state.funds
   );
@@ -89,6 +109,23 @@ function withHand(state: RoundState, hand: HandState): RoundState {
   };
 }
 
+function withSplit(state: RoundState, split: SplitState): RoundState {
+  if (split.phase !== "result" || state.bet === null) {
+    return { ...state, split, phase: split.phase };
+  }
+
+  const [hand1, hand2] = split.hands;
+  const total =
+    payout(state.bet, hand1.outcome!) + payout(state.bet, hand2.outcome!);
+
+  return {
+    ...state,
+    split,
+    phase: "result",
+    funds: state.funds + total,
+  };
+}
+
 export function placeBet(
   state: RoundState,
   amount: number,
@@ -104,18 +141,43 @@ export function placeBet(
 }
 
 export function hit(state: RoundState): RoundState {
+  if (state.split) {
+    if (state.split.phase !== "player-turn") return state;
+    return withSplit(state, splitHit(state.split));
+  }
   if (state.phase !== "player-turn" || !state.hand) return state;
   return withHand(state, engineHit(state.hand));
 }
 
 export function stand(state: RoundState): RoundState {
+  if (state.split) {
+    if (state.split.phase !== "player-turn") return state;
+    return withSplit(state, splitStand(state.split));
+  }
   if (state.phase !== "player-turn" || !state.hand) return state;
   return withHand(state, engineStand(state.hand));
 }
 
 export function dealerStep(state: RoundState): RoundState {
+  if (state.split) {
+    if (state.split.phase !== "dealer-turn") return state;
+    return withSplit(state, splitDealerStep(state.split));
+  }
   if (state.phase !== "dealer-turn" || !state.hand) return state;
   return withHand(state, engineDealerStep(state.hand));
+}
+
+export function split(state: RoundState): RoundState {
+  if (!canSplit(state)) return state;
+
+  const hand = state.hand!;
+  const splitState = createSplitState(
+    [hand.playerCards[0], hand.playerCards[1]],
+    hand.dealerCards,
+    hand.deck
+  );
+
+  return withSplit({ ...state, hand: null }, splitState);
 }
 
 export function doubleDown(state: RoundState): RoundState {

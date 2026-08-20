@@ -1,11 +1,13 @@
 import {
   canDoubleDown as roundCanDoubleDown,
+  canSplit as roundCanSplit,
   canTakeInsurance as roundCanTakeInsurance,
   dealerStep as roundDealerStep,
   declineInsurance as roundDeclineInsurance,
   doubleDown as roundDoubleDown,
   hit as roundHit,
   placeBet as roundPlaceBet,
+  split as roundSplit,
   stand as roundStand,
   startBetting,
   takeInsurance as roundTakeInsurance,
@@ -61,18 +63,27 @@ function withRound(session: SessionState, round: RoundState): SessionState {
   }
 
   const handNumber = session.handNumber + 1;
-  const record: HandRecord = {
-    handNumber,
-    bet: round.bet!,
-    outcome: round.hand!.outcome!,
-    fundsAfter: round.funds,
-  };
+  const newRecords: HandRecord[] = round.split
+    ? round.split.hands.map((hand) => ({
+        handNumber,
+        bet: round.bet!,
+        outcome: hand.outcome!,
+        fundsAfter: round.funds,
+      }))
+    : [
+        {
+          handNumber,
+          bet: round.bet!,
+          outcome: round.hand!.outcome!,
+          fundsAfter: round.funds,
+        },
+      ];
 
   return {
     ...session,
     round,
     handNumber,
-    records: [...session.records, record],
+    records: [...session.records, ...newRecords],
     phase: "result",
   };
 }
@@ -125,6 +136,15 @@ export function canDoubleDown(session: SessionState): boolean {
 export function doubleDown(session: SessionState): SessionState {
   if (session.phase !== "player-turn") return session;
   return withRound(session, roundDoubleDown(session.round));
+}
+
+export function canSplit(session: SessionState): boolean {
+  return session.phase === "player-turn" && roundCanSplit(session.round);
+}
+
+export function split(session: SessionState): SessionState {
+  if (session.phase !== "player-turn") return session;
+  return withRound(session, roundSplit(session.round));
 }
 
 export function advance(session: SessionState): SessionState {
