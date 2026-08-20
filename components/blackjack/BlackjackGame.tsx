@@ -3,9 +3,27 @@
 import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
-import { createShuffledDeck } from "@/lib/blackjack/deck";
+import {
+  decksRemaining,
+  runningCount,
+  sumHiLo,
+  trueCount,
+  trueCountFromRunning,
+  visibleCards,
+} from "@/lib/blackjack/count";
 import { evaluateHand } from "@/lib/blackjack/hand";
 import { MIN_BET, insuranceAmount, isValidBet } from "@/lib/blackjack/round";
+import { createShoe, needsReshuffle } from "@/lib/blackjack/shoe";
+import {
+  DEALER_COLUMNS,
+  HARD_TABLE,
+  PAIR_TABLE,
+  SOFT_TABLE,
+  recommendedAction,
+  strategyLocation,
+  type StrategyAction,
+  type StrategyLocation,
+} from "@/lib/blackjack/strategy";
 import { cn } from "@/lib/utils";
 import {
   advance,
@@ -68,11 +86,66 @@ function CardFace({ card, hidden }: { card: Card; hidden?: boolean }) {
   );
 }
 
+function StrategyTable({
+  title,
+  table,
+  highlight,
+}: {
+  title: string;
+  table: Record<string, Record<string, string>>;
+  highlight: StrategyLocation | null;
+}) {
+  return (
+    <div className="w-full overflow-x-auto">
+      <p className="mb-1 text-xs font-semibold text-muted-foreground">{title}</p>
+      <table className="w-full border-collapse text-center text-xs">
+        <thead>
+          <tr>
+            <th className="p-1" />
+            {DEALER_COLUMNS.map((col) => (
+              <th key={col} className="p-1 font-normal text-muted-foreground">
+                {col}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {Object.keys(table).map((rowKey) => (
+            <tr key={rowKey}>
+              <th className="p-1 font-normal text-muted-foreground">{rowKey}</th>
+              {DEALER_COLUMNS.map((col) => {
+                const isActive =
+                  highlight !== null &&
+                  String(highlight.row) === rowKey &&
+                  highlight.col === col;
+                return (
+                  <td
+                    key={col}
+                    className={cn(
+                      "border border-border p-1",
+                      isActive && "bg-primary font-bold text-primary-foreground"
+                    )}
+                  >
+                    {table[rowKey][col]}
+                  </td>
+                );
+              })}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 export function BlackjackGame() {
   const [state, setState] = useState<SessionState>(() =>
     startSession(INITIAL_FUNDS)
   );
   const [betInput, setBetInput] = useState(String(DEFAULT_BET));
+  const [shoe, setShoe] = useState<Card[]>(() => createShoe());
+  const [bankedRunningCount, setBankedRunningCount] = useState(0);
+  const [hintOn, setHintOn] = useState(true);
 
   useEffect(() => {
     if (state.phase !== "dealer-turn") return;
@@ -87,20 +160,37 @@ export function BlackjackGame() {
   function confirmBet() {
     const amount = floorToBetUnit(Number(betInput) || 0);
     if (!isValidBet(state.round.funds, amount)) return;
-    setState((current) => placeBet(current, amount, createShuffledDeck()));
+
+    const reshuffled = needsReshuffle(shoe.length);
+    const deck = reshuffled ? createShoe() : shoe;
+    if (reshuffled) setBankedRunningCount(0);
+    setState((current) => placeBet(current, amount, deck));
   }
 
   function goToNextStep() {
+    const finishedRound = state.round;
+    const finishedDeck = finishedRound.split
+      ? finishedRound.split.deck
+      : finishedRound.hand
+        ? finishedRound.hand.deck
+        : shoe;
+    const bankedAfterThisHand =
+      bankedRunningCount + sumHiLo(visibleCards(finishedRound));
+
     const next = advance(state);
     if (next.phase === "betting") {
       setBetInput(String(Math.min(DEFAULT_BET, next.round.funds)));
     }
+    setShoe(finishedDeck);
+    setBankedRunningCount(bankedAfterThisHand);
     setState(next);
   }
 
   function startOverWithNewSession() {
     const next = startNewSession(state);
     setBetInput(String(Math.min(DEFAULT_BET, next.round.funds)));
+    setShoe(createShoe());
+    setBankedRunningCount(0);
     setState(next);
   }
 
@@ -117,12 +207,71 @@ export function BlackjackGame() {
     : hand?.dealerHoleRevealed ?? false;
   const dealer = dealerCards ? evaluateHand(dealerCards) : null;
 
+  const activeCards = splitState
+    ? splitState.hands[splitState.activeHandIndex].cards
+    : hand?.playerCards;
+  const dealerUpCard = dealerCards?.[0];
+
+  const showRecommendation =
+    hintOn && state.phase === "player-turn" && !!activeCards && !!dealerUpCard;
+  const recommendation: StrategyAction | null = showRecommendation
+    ? recommendedAction(activeCards!, dealerUpCard!, {
+        canDouble: canDoubleDown(state),
+        canSplit: canSplit(state),
+      })
+    : null;
+  const highlightLocation: StrategyLocation | null = showRecommendation
+    ? strategyLocation(activeCards!, dealerUpCard!, canSplit(state))
+    : null;
+
+  // 세션이 끝나면 round는 마지막 판의 카드를 그대로 들고 있어(초기화되지 않음), 그 카드는
+  // goToNextStep에서 이미 bankedRunningCount에 합산되어 있다. 여기서 또 더하면 이중 계산되므로
+  // 세션 종료 화면에서는 은행된 값만 사용한다.
+  const displayRunningCount =
+    state.phase === "session-over"
+      ? bankedRunningCount
+      : runningCount(round, bankedRunningCount);
+  const displayDecksRemaining = decksRemaining(round, shoe);
+  const displayTrueCount =
+    state.phase === "session-over"
+      ? trueCountFromRunning(bankedRunningCount, displayDecksRemaining)
+      : trueCount(round, shoe, bankedRunningCount);
+
   return (
-    <div className="flex w-full max-w-md flex-col items-center gap-6 py-16">
-      <h1 className="text-2xl font-semibold">블랙잭</h1>
+    <div className="flex w-full max-w-2xl flex-col items-center gap-6 py-16">
+      <div className="flex w-full max-w-md items-center justify-between">
+        <h1 className="text-2xl font-semibold">블랙잭</h1>
+        <Button
+          variant={hintOn ? "default" : "outline"}
+          size="sm"
+          onClick={() => setHintOn((current) => !current)}
+        >
+          {hintOn ? "힌트 끄기" : "힌트 켜기"}
+        </Button>
+      </div>
       <p className="text-sm text-muted-foreground">
         {state.handNumber}판째 · 보유 자금 {round.funds}
       </p>
+
+      {hintOn && (
+        <section
+          aria-label="카드 카운팅"
+          className="flex w-full max-w-md flex-col items-center gap-1 rounded-lg border border-border p-3 text-sm"
+        >
+          <p>
+            러닝 카운트 {displayRunningCount} · 트루 카운트 {displayTrueCount} ·
+            남은 덱 {displayDecksRemaining}
+          </p>
+          <details className="w-full text-xs text-muted-foreground">
+            <summary className="cursor-pointer">카드 카운팅 원리 보기</summary>
+            <p className="mt-1">
+              러닝 카운트: 보이는 카드마다 2~6은 +1, 7~9는 0, 10·J·Q·K·A는 -1을
+              더한 값입니다. 트루 카운트: 러닝 카운트를 슈에 남은 덱 수로 나눈
+              값으로, 남은 카드에 높은 카드가 많을수록 커집니다.
+            </p>
+          </details>
+        </section>
+      )}
 
       {state.phase === "betting" && round.funds >= MIN_BET && (
         <div className="flex flex-col items-center gap-2">
@@ -254,22 +403,32 @@ export function BlackjackGame() {
             )}
             <Button
               variant="outline"
+              className={cn(hintOn && "ring-2 ring-primary")}
               onClick={() => setState((current) => declineInsurance(current))}
             >
               인슈어런스 거절
             </Button>
           </div>
+          {hintOn && (
+            <p className="text-xs text-muted-foreground">
+              기본 전략 권장: 인슈어런스 거절
+            </p>
+          )}
         </div>
       )}
 
       {state.phase === "player-turn" && (
         <div className="flex flex-col items-center gap-3">
           <div className="flex gap-3">
-            <Button onClick={() => setState((current) => hit(current))}>
+            <Button
+              className={cn(recommendation === "hit" && "ring-2 ring-primary")}
+              onClick={() => setState((current) => hit(current))}
+            >
               히트
             </Button>
             <Button
               variant="outline"
+              className={cn(recommendation === "stand" && "ring-2 ring-primary")}
               onClick={() => setState((current) => stand(current))}
             >
               스탠드
@@ -277,6 +436,7 @@ export function BlackjackGame() {
             <Button
               variant="outline"
               disabled={!canDoubleDown(state)}
+              className={cn(recommendation === "double" && "ring-2 ring-primary")}
               onClick={() => setState((current) => doubleDown(current))}
             >
               더블다운
@@ -286,6 +446,7 @@ export function BlackjackGame() {
             <div className="flex gap-3">
               <Button
                 variant="outline"
+                className={cn(recommendation === "split" && "ring-2 ring-primary")}
                 onClick={() => setState((current) => split(current))}
               >
                 스플릿
@@ -334,7 +495,7 @@ export function BlackjackGame() {
             <dd>{round.funds - state.startingFunds}</dd>
           </dl>
 
-          <table className="w-full text-sm">
+          <table aria-label="세션 기록" className="w-full text-sm">
             <thead>
               <tr className="text-muted-foreground">
                 <th className="text-left">판</th>
@@ -356,6 +517,26 @@ export function BlackjackGame() {
           </table>
 
           <Button onClick={startOverWithNewSession}>새 세션 시작</Button>
+        </div>
+      )}
+
+      {hintOn && (
+        <div className="flex w-full flex-col gap-4">
+          <StrategyTable
+            title="하드 총합"
+            table={HARD_TABLE}
+            highlight={highlightLocation?.table === "hard" ? highlightLocation : null}
+          />
+          <StrategyTable
+            title="소프트 총합 (A 포함)"
+            table={SOFT_TABLE}
+            highlight={highlightLocation?.table === "soft" ? highlightLocation : null}
+          />
+          <StrategyTable
+            title="페어"
+            table={PAIR_TABLE}
+            highlight={highlightLocation?.table === "pair" ? highlightLocation : null}
+          />
         </div>
       )}
     </div>

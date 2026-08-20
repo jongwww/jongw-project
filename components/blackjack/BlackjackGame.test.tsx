@@ -1,14 +1,15 @@
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
-import { createShuffledDeck } from "@/lib/blackjack/deck";
+import { createShoe } from "@/lib/blackjack/shoe";
 import type { Card } from "@/lib/blackjack/types";
 
 import { BlackjackGame } from "./BlackjackGame";
 
-vi.mock("@/lib/blackjack/deck", () => ({
-  createShuffledDeck: vi.fn(),
-}));
+vi.mock("@/lib/blackjack/shoe", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/blackjack/shoe")>();
+  return { ...actual, createShoe: vi.fn(actual.createShoe) };
+});
 
 const c = (rank: Card["rank"], suit: Card["suit"] = "♠"): Card => ({
   rank,
@@ -16,7 +17,7 @@ const c = (rank: Card["rank"], suit: Card["suit"] = "♠"): Card => ({
 });
 
 function mockDeck(...cards: Card[]) {
-  vi.mocked(createShuffledDeck).mockReturnValue(cards);
+  vi.mocked(createShoe).mockReturnValue(cards);
 }
 
 function placeBet(amount: string) {
@@ -290,11 +291,22 @@ test("자금을 모두 잃으면 세션이 끝나고, 세션 결과 화면에 �
   expect(screen.getByText("세션 종료")).toBeInTheDocument();
   expect(screen.getByText(/보유 자금 0/)).toBeInTheDocument();
 
-  const table = screen.getByRole("table");
+  const table = screen.getByRole("table", { name: "세션 기록" });
   expect(table).toHaveTextContent("1");
   expect(table).toHaveTextContent("1000");
   expect(table).toHaveTextContent("패");
   expect(table).toHaveTextContent("0");
+});
+
+test("세션 종료 화면의 러닝 카운트는 마지막 판을 이중으로 계산하지 않는다", () => {
+  mockDeck(c("9"), c("7"), c("K"), c("A"));
+
+  render(<BlackjackGame />);
+  placeBet("1000");
+  fireEvent.click(screen.getByRole("button", { name: "세션 결과 보기" }));
+
+  // 9(0)+7(0)+K(-1)+A(-1) = -2. 이중 계산되면 -4로 보인다.
+  expect(screen.getByText(/러닝 카운트 -2 /)).toBeInTheDocument();
 });
 
 test("세션 결과 화면에서 새 세션을 시작하면 자금과 배팅 화면이 초기화된다", () => {
@@ -307,4 +319,59 @@ test("세션 결과 화면에서 새 세션을 시작하면 자금과 배팅 화
 
   expect(screen.getByText(/보유 자금 1000/)).toBeInTheDocument();
   expect(screen.getByLabelText("배팅액")).toBeInTheDocument();
+});
+
+function fillerCards(count: number, rank: Card["rank"] = "9"): Card[] {
+  return Array.from({ length: count }, () => c(rank));
+}
+
+test("힌트는 기본으로 켜져 있어 전략표와 카운트가 보이고, 끄면 사라진다", () => {
+  render(<BlackjackGame />);
+
+  expect(screen.getByText(/러닝 카운트 0/)).toBeInTheDocument();
+  expect(screen.getByText("하드 총합")).toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole("button", { name: "힌트 끄기" }));
+
+  expect(screen.queryByText(/러닝 카운트/)).not.toBeInTheDocument();
+  expect(screen.queryByText("하드 총합")).not.toBeInTheDocument();
+});
+
+test("카드가 배분되면 러닝 카운트가 보이는 카드 기준으로 즉시 갱신된다", () => {
+  mockDeck(c("2"), c("3"), c("K"), c("6"), ...fillerCards(90));
+
+  render(<BlackjackGame />);
+  placeBet("100");
+
+  // 2(+1) + 3(+1) + 딜러 오픈카드 K(-1) = 1. 딜러 홀카드(6)는 아직 미공개라 반영되지 않는다.
+  expect(screen.getByText(/러닝 카운트 1 /)).toBeInTheDocument();
+});
+
+test("판이 끝나고 다음 판으로 넘어가도 러닝 카운트가 초기화되지 않고 이어진다", () => {
+  mockDeck(
+    c("K"),
+    c("8"),
+    c("7"),
+    c("6"),
+    c("Q"),
+    c("9"),
+    c("8"),
+    c("7"),
+    c("6"),
+    ...fillerCards(90)
+  );
+
+  render(<BlackjackGame />);
+  placeBet("100");
+  fireEvent.click(screen.getByRole("button", { name: "히트" }));
+
+  expect(screen.getByRole("status")).toHaveTextContent("패 (버스트)");
+  // K(-1)+8(0)+Q(-1)+7(0)+6(+1) = -1
+  expect(screen.getByText(/러닝 카운트 -1 /)).toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole("button", { name: "다음 판" }));
+  expect(screen.getByText(/러닝 카운트 -1 /)).toBeInTheDocument();
+
+  placeBet("100");
+  expect(screen.getByText(/러닝 카운트 -1 /)).toBeInTheDocument();
 });
