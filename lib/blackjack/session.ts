@@ -1,4 +1,5 @@
 import {
+  MIN_BET,
   canDoubleDown as roundCanDoubleDown,
   canSplit as roundCanSplit,
   canTakeInsurance as roundCanTakeInsurance,
@@ -51,7 +52,9 @@ export function startSession(startingFunds: number): SessionState {
 }
 
 export function isSessionOver(session: SessionState): boolean {
-  return session.handNumber >= MAX_HANDS || session.round.funds <= 0;
+  return (
+    session.handNumber >= MAX_HANDS || session.round.funds < MIN_BET
+  );
 }
 
 function withRound(session: SessionState, round: RoundState): SessionState {

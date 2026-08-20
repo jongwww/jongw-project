@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import { createShuffledDeck } from "@/lib/blackjack/deck";
@@ -22,7 +22,7 @@ function mockDeck(...cards: Card[]) {
 function placeBet(amount: string) {
   const input = screen.getByLabelText("배팅액");
   fireEvent.change(input, { target: { value: amount } });
-  fireEvent.click(screen.getByRole("button", { name: "배팅 확정" }));
+  fireEvent.click(screen.getByRole("button", { name: "배팅" }));
 }
 
 beforeEach(() => {
@@ -40,7 +40,26 @@ test("처음에는 보유 자금과 배팅 입력이 보이고, 0으로는 배�
 
   const input = screen.getByLabelText("배팅액");
   fireEvent.change(input, { target: { value: "0" } });
-  expect(screen.getByRole("button", { name: "배팅 확정" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "배팅" })).toBeDisabled();
+});
+
+test("배팅액 입력은 100 단위로 늘고 줄도록 되어 있다", () => {
+  render(<BlackjackGame />);
+
+  const input = screen.getByLabelText("배팅액");
+  expect(input).toHaveAttribute("step", "100");
+  expect(input).toHaveAttribute("min", "100");
+});
+
+test("배팅액을 100 단위가 아니게 직접 입력하면 백의 자리로 내림해서 배팅된다", () => {
+  mockDeck(c("9"), c("8"), c("7"), c("6"));
+
+  render(<BlackjackGame />);
+  const input = screen.getByLabelText("배팅액");
+  fireEvent.change(input, { target: { value: "250" } });
+  fireEvent.click(screen.getByRole("button", { name: "배팅" }));
+
+  expect(screen.getByText("플레이어 17 (배팅액 200)")).toBeInTheDocument();
 });
 
 test("배팅을 확정하면 카드가 배분되고 배팅액이 표시된다", () => {
@@ -87,30 +106,26 @@ test("스탠드해서 이기면 배팅액만큼 자금이 늘어난다", async (
   expect(screen.getByText(/보유 자금 1100/)).toBeInTheDocument();
 });
 
-test("처음 두 장을 받은 직후에는 더블다운을 선택할 수 있고, 히트한 뒤에는 사라진다", () => {
+test("처음 두 장을 받은 직후에는 더블다운이 활성화되어 있고, 히트한 뒤에는 비활성화된다", () => {
   mockDeck(c("2"), c("8"), c("7"), c("6"), c("5"));
 
   render(<BlackjackGame />);
   placeBet("100");
 
-  expect(screen.getByRole("button", { name: "더블다운" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "더블다운" })).toBeEnabled();
 
   fireEvent.click(screen.getByRole("button", { name: "히트" }));
 
-  expect(
-    screen.queryByRole("button", { name: "더블다운" })
-  ).not.toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "더블다운" })).toBeDisabled();
 });
 
-test("자금이 배팅액의 2배보다 적으면 더블다운을 선택할 수 없다", () => {
+test("자금이 배팅액의 2배보다 적으면 더블다운이 비활성화된다", () => {
   mockDeck(c("9"), c("8"), c("7"), c("6"));
 
   render(<BlackjackGame />);
   placeBet("600");
 
-  expect(
-    screen.queryByRole("button", { name: "더블다운" })
-  ).not.toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "더블다운" })).toBeDisabled();
 });
 
 test("더블다운을 선택하면 배팅액이 2배가 되고 카드를 한 장만 받은 뒤 딜러 턴으로 넘어간다", () => {
@@ -195,7 +210,7 @@ test("자금이 배팅액의 1.5배보다 적으면 인슈어런스를 들 수 �
   ).toBeInTheDocument();
 });
 
-test("같은 랭크 두 장이면 스플릿할 수 있고, 스플릿하면 두 손이 나타나고 더블다운은 사라진다", () => {
+test("같은 랭크 두 장이면 스플릿할 수 있고, 스플릿하면 두 손이 나타나고 더블다운은 비활성화된다", () => {
   mockDeck(c("8"), c("8"), c("7"), c("6"), c("5"), c("3"));
 
   render(<BlackjackGame />);
@@ -204,12 +219,26 @@ test("같은 랭크 두 장이면 스플릿할 수 있고, 스플릿하면 두 �
 
   expect(screen.getByLabelText("손 1")).toBeInTheDocument();
   expect(screen.getByLabelText("손 2")).toBeInTheDocument();
-  expect(
-    screen.queryByRole("button", { name: "더블다운" })
-  ).not.toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "더블다운" })).toBeDisabled();
   expect(
     screen.queryByRole("button", { name: "스플릿" })
   ).not.toBeInTheDocument();
+});
+
+test("스플릿한 두 손 중 지금 진행 중인 손이 어디인지 표시가 이동한다", () => {
+  mockDeck(c("8"), c("8"), c("7"), c("6"), c("5"), c("3"));
+
+  render(<BlackjackGame />);
+  placeBet("100");
+  fireEvent.click(screen.getByRole("button", { name: "스플릿" }));
+
+  expect(within(screen.getByLabelText("손 1")).getByText(/진행 중/)).toBeInTheDocument();
+  expect(within(screen.getByLabelText("손 2")).queryByText(/진행 중/)).not.toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole("button", { name: "스탠드" }));
+
+  expect(within(screen.getByLabelText("손 1")).queryByText(/진행 중/)).not.toBeInTheDocument();
+  expect(within(screen.getByLabelText("손 2")).getByText(/진행 중/)).toBeInTheDocument();
 });
 
 test("스플릿한 두 손을 각각 진행하면 손마다 결과가 표시되고 자금이 함께 정산된다", async () => {

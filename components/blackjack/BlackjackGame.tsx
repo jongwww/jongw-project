@@ -5,7 +5,8 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { createShuffledDeck } from "@/lib/blackjack/deck";
 import { evaluateHand } from "@/lib/blackjack/hand";
-import { insuranceAmount, isValidBet } from "@/lib/blackjack/round";
+import { MIN_BET, insuranceAmount, isValidBet } from "@/lib/blackjack/round";
+import { cn } from "@/lib/utils";
 import {
   advance,
   canDoubleDown,
@@ -37,6 +38,10 @@ const OUTCOME_LABEL: Record<Outcome, string> = {
 const DEALER_STEP_DELAY_MS = 700;
 const INITIAL_FUNDS = 1000;
 const DEFAULT_BET = 100;
+
+function floorToBetUnit(amount: number): number {
+  return Math.floor(amount / MIN_BET) * MIN_BET;
+}
 
 function CardFace({ card, hidden }: { card: Card; hidden?: boolean }) {
   if (hidden) {
@@ -80,7 +85,7 @@ export function BlackjackGame() {
   }, [state]);
 
   function confirmBet() {
-    const amount = Number(betInput);
+    const amount = floorToBetUnit(Number(betInput) || 0);
     if (!isValidBet(state.round.funds, amount)) return;
     setState((current) => placeBet(current, amount, createShuffledDeck()));
   }
@@ -103,7 +108,7 @@ export function BlackjackGame() {
   const hand = round.hand;
   const splitState = round.split;
   const player = hand ? evaluateHand(hand.playerCards) : null;
-  const betAmount = Number(betInput);
+  const betAmount = floorToBetUnit(Number(betInput) || 0);
   const sessionOver = isSessionOver(state);
 
   const dealerCards = splitState ? splitState.dealerCards : hand?.dealerCards;
@@ -114,22 +119,25 @@ export function BlackjackGame() {
 
   return (
     <div className="flex w-full max-w-md flex-col items-center gap-6 py-16">
-      <h1 className="text-2xl font-semibold">블랙잭 세션</h1>
+      <h1 className="text-2xl font-semibold">블랙잭</h1>
       <p className="text-sm text-muted-foreground">
         {state.handNumber}판째 · 보유 자금 {round.funds}
       </p>
 
-      {state.phase === "betting" && round.funds > 0 && (
+      {state.phase === "betting" && round.funds >= MIN_BET && (
         <div className="flex flex-col items-center gap-2">
           <label className="flex items-center gap-2 text-sm">
             배팅액
             <input
               type="number"
-              min={1}
+              min={MIN_BET}
               max={round.funds}
-              step={1}
+              step={MIN_BET}
               value={betInput}
               onChange={(event) => setBetInput(event.target.value)}
+              onBlur={() =>
+                setBetInput(String(floorToBetUnit(Number(betInput) || 0)))
+              }
               className="w-24 rounded border border-border px-2 py-1 text-black"
             />
           </label>
@@ -137,14 +145,15 @@ export function BlackjackGame() {
             onClick={confirmBet}
             disabled={!isValidBet(round.funds, betAmount)}
           >
-            배팅 확정
+            배팅
           </Button>
         </div>
       )}
 
-      {state.phase === "betting" && round.funds <= 0 && (
+      {state.phase === "betting" && round.funds < MIN_BET && (
         <p role="status" className="text-sm text-muted-foreground">
-          자금이 모두 소진되어 더 이상 배팅할 수 없습니다.
+          보유 자금이 최소 배팅액({MIN_BET})보다 적어 더 이상 배팅할 수
+          없습니다.
         </p>
       )}
 
@@ -185,7 +194,7 @@ export function BlackjackGame() {
       )}
 
       {splitState && state.phase !== "session-over" && (
-        <div className="flex gap-6">
+        <div className="flex flex-col items-center gap-4">
           {splitState.hands.map((splitHand, index) => {
             const evaluated = evaluateHand(splitHand.cards);
             const isActive =
@@ -195,7 +204,12 @@ export function BlackjackGame() {
               <section
                 key={index}
                 aria-label={`손 ${index + 1}`}
-                className="flex flex-col items-center gap-2"
+                className={cn(
+                  "flex flex-col items-center gap-2 rounded-lg border-2 p-3 transition-transform",
+                  isActive
+                    ? "scale-105 border-primary bg-primary/5"
+                    : "border-transparent"
+                )}
               >
                 <p className="text-sm text-muted-foreground">
                   손 {index + 1} {evaluated.total} (배팅액 {round.bet})
@@ -249,31 +263,34 @@ export function BlackjackGame() {
       )}
 
       {state.phase === "player-turn" && (
-        <div className="flex gap-3">
-          <Button onClick={() => setState((current) => hit(current))}>
-            히트
-          </Button>
-          <Button
-            variant="outline"
-            onClick={() => setState((current) => stand(current))}
-          >
-            스탠드
-          </Button>
-          {canDoubleDown(state) && (
+        <div className="flex flex-col items-center gap-3">
+          <div className="flex gap-3">
+            <Button onClick={() => setState((current) => hit(current))}>
+              히트
+            </Button>
             <Button
               variant="outline"
+              onClick={() => setState((current) => stand(current))}
+            >
+              스탠드
+            </Button>
+            <Button
+              variant="outline"
+              disabled={!canDoubleDown(state)}
               onClick={() => setState((current) => doubleDown(current))}
             >
               더블다운
             </Button>
-          )}
+          </div>
           {canSplit(state) && (
-            <Button
-              variant="outline"
-              onClick={() => setState((current) => split(current))}
-            >
-              스플릿
-            </Button>
+            <div className="flex gap-3">
+              <Button
+                variant="outline"
+                onClick={() => setState((current) => split(current))}
+              >
+                스플릿
+              </Button>
+            </div>
           )}
         </div>
       )}

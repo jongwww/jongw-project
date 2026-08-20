@@ -46,6 +46,8 @@ export function startBetting(funds: number): RoundState {
   };
 }
 
+export const MIN_BET = 100;
+
 export function isValidBet(funds: number, amount: number): boolean {
   return Number.isInteger(amount) && amount > 0 && amount <= funds;
 }
