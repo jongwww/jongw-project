@@ -67,21 +67,26 @@ function CardFace({ card, hidden }: { card: Card; hidden?: boolean }) {
       <div
         role="img"
         aria-label="가려진 카드"
-        className="flex h-24 w-16 items-center justify-center rounded-lg border border-border bg-muted text-xl"
+        className="flex h-24 w-16 items-center justify-center rounded-lg border-2 border-amber-900/30 bg-gradient-to-br from-emerald-700 to-emerald-900 text-2xl text-emerald-100 shadow-md"
       >
         🂠
       </div>
     );
   }
 
+  const isRed = card.suit === "♥" || card.suit === "♦";
+
   return (
     <div
       role="img"
       aria-label={`${card.rank}${card.suit}`}
-      className="flex h-24 w-16 flex-col items-center justify-center rounded-lg border border-border bg-white text-lg font-semibold text-black"
+      className={cn(
+        "flex h-24 w-16 flex-col items-center justify-center rounded-lg border border-border bg-white font-serif text-lg font-bold shadow-md",
+        isRed ? "text-red-600" : "text-neutral-900"
+      )}
     >
       <span>{card.rank}</span>
-      <span>{card.suit}</span>
+      <span className="text-xl leading-none">{card.suit}</span>
     </div>
   );
 }
@@ -123,7 +128,7 @@ function StrategyTable({
                     key={col}
                     className={cn(
                       "border border-border p-1",
-                      isActive && "bg-primary font-bold text-primary-foreground"
+                      isActive && "bg-amber-500 font-bold text-black"
                     )}
                   >
                     {table[rowKey][col]}
@@ -145,7 +150,7 @@ export function BlackjackGame() {
   const [betInput, setBetInput] = useState(String(DEFAULT_BET));
   const [shoe, setShoe] = useState<Card[]>(() => createShoe());
   const [bankedRunningCount, setBankedRunningCount] = useState(0);
-  const [hintOn, setHintOn] = useState(true);
+  const [hintOn, setHintOn] = useState(false);
 
   useEffect(() => {
     if (state.phase !== "dealer-turn") return;
@@ -238,12 +243,18 @@ export function BlackjackGame() {
       : trueCount(round, shoe, bankedRunningCount);
 
   return (
-    <div className="flex w-full max-w-2xl flex-col items-center gap-6 py-16">
+    <div className="w-full max-w-2xl rounded-3xl bg-gradient-to-b from-emerald-800 to-emerald-950 p-2 shadow-2xl ring-1 ring-black/10 sm:p-5">
+      <div className="flex w-full flex-col items-center gap-6 rounded-2xl bg-white/95 px-4 py-10 dark:bg-zinc-950/90">
       <div className="flex w-full max-w-md items-center justify-between">
-        <h1 className="text-2xl font-semibold">블랙잭</h1>
+        <h1 className="flex items-center gap-2 font-serif text-2xl font-bold tracking-wide text-emerald-900 dark:text-emerald-200">
+          <span aria-hidden className="text-amber-600">♠</span>
+          Blackjack
+          <span aria-hidden className="text-amber-600">♣</span>
+        </h1>
         <Button
           variant={hintOn ? "default" : "outline"}
           size="sm"
+          className={cn(hintOn && "bg-emerald-700 hover:bg-emerald-700/80")}
           onClick={() => setHintOn((current) => !current)}
         >
           {hintOn ? "힌트 끄기" : "힌트 켜기"}
@@ -256,7 +267,7 @@ export function BlackjackGame() {
       {hintOn && (
         <section
           aria-label="카드 카운팅"
-          className="flex w-full max-w-md flex-col items-center gap-1 rounded-lg border border-border p-3 text-sm"
+          className="flex w-full max-w-md flex-col items-center gap-1 rounded-lg border border-amber-600/40 bg-amber-50 p-3 text-sm dark:bg-amber-950/20"
         >
           <p>
             러닝 카운트 {displayRunningCount} · 트루 카운트 {displayTrueCount} ·
@@ -274,22 +285,20 @@ export function BlackjackGame() {
       )}
 
       {state.phase === "betting" && round.funds >= MIN_BET && (
-        <div className="flex flex-col items-center gap-2">
-          <label className="flex items-center gap-2 text-sm">
-            배팅액
-            <input
-              type="number"
-              min={MIN_BET}
-              max={round.funds}
-              step={MIN_BET}
-              value={betInput}
-              onChange={(event) => setBetInput(event.target.value)}
-              onBlur={() =>
-                setBetInput(String(floorToBetUnit(Number(betInput) || 0)))
-              }
-              className="w-24 rounded border border-border px-2 py-1 text-black"
-            />
-          </label>
+        <div className="flex items-center gap-2">
+          <input
+            type="number"
+            aria-label="배팅액"
+            min={MIN_BET}
+            max={round.funds}
+            step={MIN_BET}
+            value={betInput}
+            onChange={(event) => setBetInput(event.target.value)}
+            onBlur={() =>
+              setBetInput(String(floorToBetUnit(Number(betInput) || 0)))
+            }
+            className="w-24 rounded border border-border px-2 py-1 text-black"
+          />
           <Button
             onClick={confirmBet}
             disabled={!isValidBet(round.funds, betAmount)}
@@ -403,7 +412,7 @@ export function BlackjackGame() {
             )}
             <Button
               variant="outline"
-              className={cn(hintOn && "ring-2 ring-primary")}
+              className={cn(hintOn && "ring-2 ring-amber-500 ring-offset-2")}
               onClick={() => setState((current) => declineInsurance(current))}
             >
               인슈어런스 거절
@@ -421,14 +430,14 @@ export function BlackjackGame() {
         <div className="flex flex-col items-center gap-3">
           <div className="flex gap-3">
             <Button
-              className={cn(recommendation === "hit" && "ring-2 ring-primary")}
+              className={cn(recommendation === "hit" && "ring-2 ring-amber-500 ring-offset-2")}
               onClick={() => setState((current) => hit(current))}
             >
               히트
             </Button>
             <Button
               variant="outline"
-              className={cn(recommendation === "stand" && "ring-2 ring-primary")}
+              className={cn(recommendation === "stand" && "ring-2 ring-amber-500 ring-offset-2")}
               onClick={() => setState((current) => stand(current))}
             >
               스탠드
@@ -436,7 +445,7 @@ export function BlackjackGame() {
             <Button
               variant="outline"
               disabled={!canDoubleDown(state)}
-              className={cn(recommendation === "double" && "ring-2 ring-primary")}
+              className={cn(recommendation === "double" && "ring-2 ring-amber-500 ring-offset-2")}
               onClick={() => setState((current) => doubleDown(current))}
             >
               더블다운
@@ -446,7 +455,7 @@ export function BlackjackGame() {
             <div className="flex gap-3">
               <Button
                 variant="outline"
-                className={cn(recommendation === "split" && "ring-2 ring-primary")}
+                className={cn(recommendation === "split" && "ring-2 ring-amber-500 ring-offset-2")}
                 onClick={() => setState((current) => split(current))}
               >
                 스플릿
@@ -522,6 +531,18 @@ export function BlackjackGame() {
 
       {hintOn && (
         <div className="flex w-full flex-col gap-4">
+          <div className="w-full rounded-lg border border-amber-600/30 bg-amber-50 p-2 text-[11px] leading-relaxed text-amber-900 dark:bg-amber-950/20 dark:text-amber-100">
+            <p>
+              <strong>하드 총합</strong> 에이스를 11로 셀 수 없는 손 ·{" "}
+              <strong>소프트 총합</strong> 에이스를 11로 셀 수 있는 손 ·{" "}
+              <strong>페어</strong> 처음 두 장이 같은 숫자인 손
+            </p>
+            <p>
+              <strong>H</strong> 히트 · <strong>S</strong> 스탠드 ·{" "}
+              <strong>D</strong> 더블다운(불가하면 히트) · <strong>Ds</strong>{" "}
+              더블다운(불가하면 스탠드) · <strong>P</strong> 스플릿
+            </p>
+          </div>
           <StrategyTable
             title="하드 총합"
             table={HARD_TABLE}
@@ -539,6 +560,7 @@ export function BlackjackGame() {
           />
         </div>
       )}
+      </div>
     </div>
   );
 }

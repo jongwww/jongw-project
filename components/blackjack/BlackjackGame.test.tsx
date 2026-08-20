@@ -302,6 +302,7 @@ test("세션 종료 화면의 러닝 카운트는 마지막 판을 이중으로 
   mockDeck(c("9"), c("7"), c("K"), c("A"));
 
   render(<BlackjackGame />);
+  fireEvent.click(screen.getByRole("button", { name: "힌트 켜기" }));
   placeBet("1000");
   fireEvent.click(screen.getByRole("button", { name: "세션 결과 보기" }));
 
@@ -325,22 +326,29 @@ function fillerCards(count: number, rank: Card["rank"] = "9"): Card[] {
   return Array.from({ length: count }, () => c(rank));
 }
 
-test("힌트는 기본으로 켜져 있어 전략표와 카운트가 보이고, 끄면 사라진다", () => {
+test("힌트는 기본으로 꺼져 있고, 켜면 전략표와 카운트가 보인다", () => {
   render(<BlackjackGame />);
 
+  expect(screen.queryByText(/러닝 카운트/)).not.toBeInTheDocument();
+  expect(screen.queryAllByRole("table")).toHaveLength(0);
+
+  fireEvent.click(screen.getByRole("button", { name: "힌트 켜기" }));
+
   expect(screen.getByText(/러닝 카운트 0/)).toBeInTheDocument();
-  expect(screen.getByText("하드 총합")).toBeInTheDocument();
+  expect(screen.getAllByText("하드 총합").length).toBeGreaterThan(0);
+  expect(screen.getAllByRole("table")).toHaveLength(3);
 
   fireEvent.click(screen.getByRole("button", { name: "힌트 끄기" }));
 
   expect(screen.queryByText(/러닝 카운트/)).not.toBeInTheDocument();
-  expect(screen.queryByText("하드 총합")).not.toBeInTheDocument();
+  expect(screen.queryAllByRole("table")).toHaveLength(0);
 });
 
 test("카드가 배분되면 러닝 카운트가 보이는 카드 기준으로 즉시 갱신된다", () => {
   mockDeck(c("2"), c("3"), c("K"), c("6"), ...fillerCards(90));
 
   render(<BlackjackGame />);
+  fireEvent.click(screen.getByRole("button", { name: "힌트 켜기" }));
   placeBet("100");
 
   // 2(+1) + 3(+1) + 딜러 오픈카드 K(-1) = 1. 딜러 홀카드(6)는 아직 미공개라 반영되지 않는다.
@@ -362,6 +370,7 @@ test("판이 끝나고 다음 판으로 넘어가도 러닝 카운트가 초기�
   );
 
   render(<BlackjackGame />);
+  fireEvent.click(screen.getByRole("button", { name: "힌트 켜기" }));
   placeBet("100");
   fireEvent.click(screen.getByRole("button", { name: "히트" }));
 
