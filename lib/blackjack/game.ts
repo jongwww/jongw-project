@@ -3,7 +3,7 @@ import { shouldDealerHit } from "./dealer";
 import { resolveOutcome } from "./outcome";
 import type { Card, Outcome } from "./types";
 
-export type Phase = "player-turn" | "dealer-turn" | "result";
+export type Phase = "insurance-offer" | "player-turn" | "dealer-turn" | "result";
 
 export interface GameState {
   deck: Card[];
@@ -23,6 +23,16 @@ function finishWithOutcome(state: GameState): GameState {
   };
 }
 
+function startPlayerTurnOrFinish(state: GameState): GameState {
+  const player = evaluateHand(state.playerCards);
+  const dealer = evaluateHand(state.dealerCards);
+  if (player.blackjack || dealer.blackjack) {
+    return finishWithOutcome(state);
+  }
+
+  return { ...state, phase: "player-turn" };
+}
+
 export function createGame(deck: Card[]): GameState {
   const remaining = [...deck];
   const playerCards = [remaining.shift()!, remaining.shift()!];
@@ -37,13 +47,16 @@ export function createGame(deck: Card[]): GameState {
     outcome: null,
   };
 
-  const player = evaluateHand(playerCards);
-  const dealer = evaluateHand(dealerCards);
-  if (player.blackjack || dealer.blackjack) {
-    return finishWithOutcome(state);
+  if (dealerCards[0].rank === "A") {
+    return { ...state, phase: "insurance-offer" };
   }
 
-  return state;
+  return startPlayerTurnOrFinish(state);
+}
+
+export function resolveInsuranceOffer(state: GameState): GameState {
+  if (state.phase !== "insurance-offer") return state;
+  return startPlayerTurnOrFinish(state);
 }
 
 export function hit(state: GameState): GameState {

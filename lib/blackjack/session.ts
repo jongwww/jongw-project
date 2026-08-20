@@ -1,17 +1,21 @@
 import {
   canDoubleDown as roundCanDoubleDown,
+  canTakeInsurance as roundCanTakeInsurance,
   dealerStep as roundDealerStep,
+  declineInsurance as roundDeclineInsurance,
   doubleDown as roundDoubleDown,
   hit as roundHit,
   placeBet as roundPlaceBet,
   stand as roundStand,
   startBetting,
+  takeInsurance as roundTakeInsurance,
   type RoundState,
 } from "./round";
 import type { Card, Outcome } from "./types";
 
 export type SessionPhase =
   | "betting"
+  | "insurance-offer"
   | "player-turn"
   | "dealer-turn"
   | "result"
@@ -95,6 +99,23 @@ export function stand(session: SessionState): SessionState {
 export function dealerStep(session: SessionState): SessionState {
   if (session.phase !== "dealer-turn") return session;
   return withRound(session, roundDealerStep(session.round));
+}
+
+export function canTakeInsurance(session: SessionState): boolean {
+  return (
+    session.phase === "insurance-offer" &&
+    roundCanTakeInsurance(session.round)
+  );
+}
+
+export function takeInsurance(session: SessionState): SessionState {
+  if (session.phase !== "insurance-offer") return session;
+  return withRound(session, roundTakeInsurance(session.round));
+}
+
+export function declineInsurance(session: SessionState): SessionState {
+  if (session.phase !== "insurance-offer") return session;
+  return withRound(session, roundDeclineInsurance(session.round));
 }
 
 export function canDoubleDown(session: SessionState): boolean {

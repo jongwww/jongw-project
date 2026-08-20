@@ -2,7 +2,9 @@ import { expect, test } from "vitest";
 
 import {
   canDoubleDown,
+  canTakeInsurance,
   dealerStep,
+  declineInsurance,
   doubleDown,
   hit,
   isValidBet,
@@ -10,6 +12,7 @@ import {
   stand,
   startBetting,
   startNextRound,
+  takeInsurance,
 } from "./round";
 import type { Card } from "./types";
 
@@ -192,6 +195,75 @@ test("유효하지 않은 더블다운 시도는 상태를 바꾸지 않는다",
   expect(doubleDown(state)).toEqual(state);
 });
 
+test("딜러 오픈 카드가 A이면 배팅 확정 후 인슈어런스 제안 단계로 넘어간다", () => {
+  const next = placeBet(startBetting(1000), 100, deckOf("9", "8", "A", "6"));
+
+  expect(next.phase).toBe("insurance-offer");
+  expect(next.funds).toBe(1000);
+});
+
+test("인슈어런스는 보유 자금이 배팅액의 1.5배 이상일 때만 들 수 있다", () => {
+  const tooLittle = placeBet(startBetting(140), 100, deckOf("9", "8", "A", "6"));
+  expect(canTakeInsurance(tooLittle)).toBe(false);
+
+  const enough = placeBet(startBetting(150), 100, deckOf("9", "8", "A", "6"));
+  expect(canTakeInsurance(enough)).toBe(true);
+});
+
+test("인슈어런스를 들었는데 딜러가 블랙잭이 아니면 배팅액의 절반만큼 잃고 플레이어 턴으로 이어진다", () => {
+  const offered = placeBet(startBetting(1000), 100, deckOf("9", "8", "A", "6"));
+
+  const next = takeInsurance(offered);
+
+  expect(next.phase).toBe("player-turn");
+  expect(next.funds).toBe(950);
+  expect(next.lastInsuranceResult).toBe("lost");
+});
+
+test("인슈어런스를 들었는데 딜러가 블랙잭이면 인슈어런스는 2배로 받고 본 배팅은 별도로 정산된다", () => {
+  const offered = placeBet(startBetting(1000), 100, deckOf("9", "8", "A", "K"));
+
+  const next = takeInsurance(offered);
+
+  expect(next.phase).toBe("result");
+  expect(next.hand?.outcome).toBe("dealer-win");
+  expect(next.funds).toBe(1000);
+  expect(next.lastInsuranceResult).toBe("won");
+});
+
+test("인슈어런스를 들고 플레이어도 블랙잭이면 인슈어런스 이득만 남고 본 배팅은 무승부다", () => {
+  const offered = placeBet(startBetting(1000), 100, deckOf("A", "K", "A", "K"));
+
+  const next = takeInsurance(offered);
+
+  expect(next.phase).toBe("result");
+  expect(next.hand?.outcome).toBe("push");
+  expect(next.funds).toBe(1100);
+});
+
+test("인슈어런스를 거절하면 자금 변화 없이 계속 진행된다", () => {
+  const declinedNoBlackjack = declineInsurance(
+    placeBet(startBetting(1000), 100, deckOf("9", "8", "A", "6"))
+  );
+  expect(declinedNoBlackjack.phase).toBe("player-turn");
+  expect(declinedNoBlackjack.funds).toBe(1000);
+  expect(declinedNoBlackjack.lastInsuranceResult).toBeNull();
+
+  const declinedWithBlackjack = declineInsurance(
+    placeBet(startBetting(1000), 100, deckOf("9", "8", "A", "K"))
+  );
+  expect(declinedWithBlackjack.phase).toBe("result");
+  expect(declinedWithBlackjack.hand?.outcome).toBe("dealer-win");
+  expect(declinedWithBlackjack.funds).toBe(900);
+});
+
+test("인슈어런스 제안 단계가 아니면 인슈어런스 시도는 상태를 바꾸지 않는다", () => {
+  const state = placeBet(startBetting(1000), 100, deckOf("9", "8", "7", "6"));
+
+  expect(takeInsurance(state)).toEqual(state);
+  expect(declineInsurance(state)).toEqual(state);
+});
+
 test("새 판을 시작하면 배팅과 카드는 초기화되고 자금은 유지된다", () => {
   const finished = placeBet(startBetting(1000), 100, deckOf("A", "K", "9", "7"));
 
@@ -202,5 +274,6 @@ test("새 판을 시작하면 배팅과 카드는 초기화되고 자금은 유�
     bet: null,
     hand: null,
     phase: "betting",
+    lastInsuranceResult: null,
   });
 });

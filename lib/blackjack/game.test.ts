@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 
-import { createGame, dealerStep, hit, stand } from "./game";
+import { createGame, dealerStep, hit, resolveInsuranceOffer, stand } from "./game";
 import type { Card } from "./types";
 
 const c = (rank: Card["rank"]): Card => ({ rank, suit: "♠" });
@@ -27,6 +27,43 @@ test("플레이어가 처음부터 블랙잭이면 선택 없이 즉시 결과�
   expect(state.phase).toBe("result");
   expect(state.outcome).toBe("player-blackjack");
   expect(state.dealerHoleRevealed).toBe(true);
+});
+
+test("딜러의 오픈 카드가 A이면 인슈어런스 제안 단계에서 멈춘다", () => {
+  const deck = deckOf("9", "8", "A", "6");
+  const state = createGame(deck);
+
+  expect(state.phase).toBe("insurance-offer");
+  expect(state.dealerHoleRevealed).toBe(false);
+  expect(state.outcome).toBeNull();
+});
+
+test("인슈어런스 제안 후 계속하면 딜러가 블랙잭이 아닐 때 플레이어 턴으로 넘어간다", () => {
+  const state = createGame(deckOf("9", "8", "A", "6"));
+
+  const next = resolveInsuranceOffer(state);
+
+  expect(next.phase).toBe("player-turn");
+  expect(next.outcome).toBeNull();
+});
+
+test("인슈어런스 제안 후 계속했는데 딜러가 블랙잭이면 즉시 결과가 정해진다", () => {
+  const state = createGame(deckOf("9", "8", "A", "K"));
+
+  const next = resolveInsuranceOffer(state);
+
+  expect(next.phase).toBe("result");
+  expect(next.outcome).toBe("dealer-win");
+  expect(next.dealerHoleRevealed).toBe(true);
+});
+
+test("인슈어런스 제안 상황에서 플레이어도 블랙잭이면 무승부로 끝난다", () => {
+  const state = createGame(deckOf("A", "K", "A", "K"));
+
+  const next = resolveInsuranceOffer(state);
+
+  expect(next.phase).toBe("result");
+  expect(next.outcome).toBe("push");
 });
 
 test("히트하면 카드가 한 장 추가된다", () => {

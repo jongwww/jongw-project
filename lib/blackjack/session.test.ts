@@ -4,12 +4,15 @@ import {
   MAX_HANDS,
   advance,
   canDoubleDown,
+  canTakeInsurance,
+  declineInsurance,
   doubleDown,
   hit,
   isSessionOver,
   placeBet,
   startNewSession,
   startSession,
+  takeInsurance,
 } from "./session";
 import type { Card } from "./types";
 
@@ -56,7 +59,7 @@ test("자금이 0이 되면 20판이 되지 않아도 세션이 종료된 것으
   const session = placeBet(
     startSession(1000),
     1000,
-    deckOf("9", "7", "A", "K")
+    deckOf("9", "7", "K", "A")
   );
 
   expect(session.handNumber).toBe(1);
@@ -83,7 +86,7 @@ test("세션이 끝났으면 다음으로 넘어가면 세션 종료 화면이 �
   const afterHand = placeBet(
     startSession(1000),
     1000,
-    deckOf("9", "7", "A", "K")
+    deckOf("9", "7", "K", "A")
   );
 
   const next = advance(afterHand);
@@ -128,6 +131,34 @@ test("더블다운한 판은 세션 기록에 2배로 오른 배팅액으로 남
   expect(next.records).toEqual([
     { handNumber: 1, bet: 200, outcome: "player-bust", fundsAfter: 800 },
   ]);
+});
+
+test("딜러 오픈 카드가 A이면 인슈어런스 제안 단계가 되고, 조건이 맞으면 들 수 있다", () => {
+  const offered = placeBet(startSession(1000), 100, deckOf("9", "8", "A", "6"));
+
+  expect(offered.phase).toBe("insurance-offer");
+  expect(canTakeInsurance(offered)).toBe(true);
+});
+
+test("인슈어런스를 들고 딜러가 블랙잭이면 세션 기록에 본 배팅 결과와 함께 정산된 자금이 남는다", () => {
+  const offered = placeBet(startSession(1000), 100, deckOf("9", "8", "A", "K"));
+
+  const next = takeInsurance(offered);
+
+  expect(next.phase).toBe("result");
+  expect(next.round.funds).toBe(1000);
+  expect(next.records).toEqual([
+    { handNumber: 1, bet: 100, outcome: "dealer-win", fundsAfter: 1000 },
+  ]);
+});
+
+test("인슈어런스를 거절하면 자금 변화 없이 플레이어 턴으로 이어진다", () => {
+  const offered = placeBet(startSession(1000), 100, deckOf("9", "8", "A", "6"));
+
+  const next = declineInsurance(offered);
+
+  expect(next.phase).toBe("player-turn");
+  expect(next.round.funds).toBe(1000);
 });
 
 test("한 판 중에는 히트/스탠드/딜러 턴이 기존 스펙과 동일하게 동작한다", () => {

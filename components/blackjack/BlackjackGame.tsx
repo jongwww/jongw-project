@@ -5,11 +5,13 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { createShuffledDeck } from "@/lib/blackjack/deck";
 import { evaluateHand } from "@/lib/blackjack/hand";
-import { isValidBet } from "@/lib/blackjack/round";
+import { insuranceAmount, isValidBet } from "@/lib/blackjack/round";
 import {
   advance,
   canDoubleDown,
+  canTakeInsurance,
   dealerStep,
+  declineInsurance,
   doubleDown,
   hit,
   isSessionOver,
@@ -17,6 +19,7 @@ import {
   stand,
   startNewSession,
   startSession,
+  takeInsurance,
   type SessionState,
 } from "@/lib/blackjack/session";
 import type { Card, Outcome } from "@/lib/blackjack/types";
@@ -171,6 +174,39 @@ export function BlackjackGame() {
             </div>
           </section>
         </>
+      )}
+
+      {round.lastInsuranceResult && (
+        <p className="text-sm text-muted-foreground">
+          인슈어런스:{" "}
+          {round.lastInsuranceResult === "won"
+            ? "적중 (2배 지급)"
+            : "실패 (배팅액 잃음)"}
+        </p>
+      )}
+
+      {state.phase === "insurance-offer" && (
+        <div className="flex flex-col items-center gap-2">
+          <p className="text-sm text-muted-foreground">
+            딜러가 A를 보여주고 있습니다. 인슈어런스(배팅액의 절반인{" "}
+            {insuranceAmount(round.bet ?? 0)})를 드시겠습니까?
+          </p>
+          <div className="flex gap-3">
+            {canTakeInsurance(state) && (
+              <Button
+                onClick={() => setState((current) => takeInsurance(current))}
+              >
+                인슈어런스 들기
+              </Button>
+            )}
+            <Button
+              variant="outline"
+              onClick={() => setState((current) => declineInsurance(current))}
+            >
+              인슈어런스 거절
+            </Button>
+          </div>
+        </div>
       )}
 
       {state.phase === "player-turn" && (

@@ -2,26 +2,54 @@ import {
   createGame,
   dealerStep as engineDealerStep,
   hit as engineHit,
+  resolveInsuranceOffer,
   stand as engineStand,
   type GameState as HandState,
 } from "./game";
+import { evaluateHand } from "./hand";
 import type { Card, Outcome } from "./types";
 
-export type RoundPhase = "betting" | "player-turn" | "dealer-turn" | "result";
+export type RoundPhase =
+  | "betting"
+  | "insurance-offer"
+  | "player-turn"
+  | "dealer-turn"
+  | "result";
+
+export type InsuranceResult = "won" | "lost";
 
 export interface RoundState {
   funds: number;
   bet: number | null;
   hand: HandState | null;
   phase: RoundPhase;
+  lastInsuranceResult: InsuranceResult | null;
 }
 
 export function startBetting(funds: number): RoundState {
-  return { funds, bet: null, hand: null, phase: "betting" };
+  return {
+    funds,
+    bet: null,
+    hand: null,
+    phase: "betting",
+    lastInsuranceResult: null,
+  };
 }
 
 export function isValidBet(funds: number, amount: number): boolean {
   return Number.isInteger(amount) && amount > 0 && amount <= funds;
+}
+
+export function insuranceAmount(bet: number): number {
+  return Math.floor(bet / 2);
+}
+
+export function canTakeInsurance(state: RoundState): boolean {
+  return (
+    state.phase === "insurance-offer" &&
+    state.bet !== null &&
+    state.funds >= state.bet + insuranceAmount(state.bet)
+  );
 }
 
 export function canDoubleDown(state: RoundState): boolean {
@@ -69,7 +97,10 @@ export function placeBet(
   if (state.phase !== "betting") return state;
   if (!isValidBet(state.funds, amount)) return state;
 
-  return withHand({ ...state, bet: amount }, createGame(deck));
+  return withHand(
+    { ...state, bet: amount, lastInsuranceResult: null },
+    createGame(deck)
+  );
 }
 
 export function hit(state: RoundState): RoundState {
@@ -98,6 +129,27 @@ export function doubleDown(state: RoundState): RoundState {
   }
 
   return withHand(doubled, engineStand(afterHit));
+}
+
+export function takeInsurance(state: RoundState): RoundState {
+  if (!canTakeInsurance(state)) return state;
+
+  const amount = insuranceAmount(state.bet!);
+  const dealerHasBlackjack = evaluateHand(state.hand!.dealerCards).blackjack;
+  const funds = state.funds + (dealerHasBlackjack ? amount * 2 : -amount);
+  const lastInsuranceResult: InsuranceResult = dealerHasBlackjack
+    ? "won"
+    : "lost";
+
+  return withHand(
+    { ...state, funds, lastInsuranceResult },
+    resolveInsuranceOffer(state.hand!)
+  );
+}
+
+export function declineInsurance(state: RoundState): RoundState {
+  if (state.phase !== "insurance-offer" || !state.hand) return state;
+  return withHand(state, resolveInsuranceOffer(state.hand));
 }
 
 export function startNextRound(state: RoundState): RoundState {

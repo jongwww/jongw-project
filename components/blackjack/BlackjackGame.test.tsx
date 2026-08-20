@@ -138,8 +138,65 @@ test("더블다운으로 21을 넘으면 딜러 턴 없이 2배로 오른 배팅
   expect(screen.getByText(/보유 자금 800/)).toBeInTheDocument();
 });
 
+test("딜러 오픈 카드가 A이면 인슈어런스를 제안하고, 거절하면 자금 변화 없이 플레이어 턴으로 이어진다", () => {
+  mockDeck(c("9"), c("8"), c("A"), c("6"));
+
+  render(<BlackjackGame />);
+  placeBet("100");
+
+  expect(
+    screen.getByRole("button", { name: "인슈어런스 들기" })
+  ).toBeInTheDocument();
+  expect(
+    screen.queryByRole("button", { name: "히트" })
+  ).not.toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole("button", { name: "인슈어런스 거절" }));
+
+  expect(screen.getByRole("button", { name: "히트" })).toBeInTheDocument();
+  expect(screen.getByText(/보유 자금 1000/)).toBeInTheDocument();
+});
+
+test("인슈어런스를 들었는데 딜러가 블랙잭이 아니면 배팅액의 절반을 잃고 플레이어 턴으로 이어진다", () => {
+  mockDeck(c("9"), c("8"), c("A"), c("6"));
+
+  render(<BlackjackGame />);
+  placeBet("100");
+  fireEvent.click(screen.getByRole("button", { name: "인슈어런스 들기" }));
+
+  expect(screen.getByText(/보유 자금 950/)).toBeInTheDocument();
+  expect(screen.getByText(/실패 \(배팅액 잃음\)/)).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "히트" })).toBeInTheDocument();
+});
+
+test("인슈어런스를 들었는데 딜러가 블랙잭이면 적중 메시지와 함께 결과가 정산된다", () => {
+  mockDeck(c("9"), c("8"), c("A"), c("K"));
+
+  render(<BlackjackGame />);
+  placeBet("100");
+  fireEvent.click(screen.getByRole("button", { name: "인슈어런스 들기" }));
+
+  expect(screen.getByRole("status")).toHaveTextContent("패");
+  expect(screen.getByText(/적중 \(2배 지급\)/)).toBeInTheDocument();
+  expect(screen.getByText(/보유 자금 1000/)).toBeInTheDocument();
+});
+
+test("자금이 배팅액의 1.5배보다 적으면 인슈어런스를 들 수 없다", () => {
+  mockDeck(c("9"), c("8"), c("A"), c("6"));
+
+  render(<BlackjackGame />);
+  placeBet("700");
+
+  expect(
+    screen.queryByRole("button", { name: "인슈어런스 들기" })
+  ).not.toBeInTheDocument();
+  expect(
+    screen.getByRole("button", { name: "인슈어런스 거절" })
+  ).toBeInTheDocument();
+});
+
 test("자금을 모두 잃으면 세션이 끝나고, 세션 결과 화면에 판별 기록과 요약이 보인다", () => {
-  mockDeck(c("9"), c("7"), c("A"), c("K"));
+  mockDeck(c("9"), c("7"), c("K"), c("A"));
 
   render(<BlackjackGame />);
   placeBet("1000");
@@ -158,7 +215,7 @@ test("자금을 모두 잃으면 세션이 끝나고, 세션 결과 화면에 �
 });
 
 test("세션 결과 화면에서 새 세션을 시작하면 자금과 배팅 화면이 초기화된다", () => {
-  mockDeck(c("9"), c("7"), c("A"), c("K"));
+  mockDeck(c("9"), c("7"), c("K"), c("A"));
 
   render(<BlackjackGame />);
   placeBet("1000");
