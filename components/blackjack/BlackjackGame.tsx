@@ -4,8 +4,17 @@ import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { createShuffledDeck } from "@/lib/blackjack/deck";
-import { createGame, dealerStep, hit, stand, type GameState } from "@/lib/blackjack/game";
 import { evaluateHand } from "@/lib/blackjack/hand";
+import {
+  dealerStep,
+  hit,
+  isValidBet,
+  placeBet,
+  stand,
+  startBetting,
+  startNextRound,
+  type RoundState,
+} from "@/lib/blackjack/round";
 import type { Card, Outcome } from "@/lib/blackjack/types";
 
 const OUTCOME_LABEL: Record<Outcome, string> = {
@@ -17,6 +26,8 @@ const OUTCOME_LABEL: Record<Outcome, string> = {
 };
 
 const DEALER_STEP_DELAY_MS = 700;
+const INITIAL_FUNDS = 1000;
+const DEFAULT_BET = 100;
 
 function CardFace({ card, hidden }: { card: Card; hidden?: boolean }) {
   if (hidden) {
@@ -44,64 +55,107 @@ function CardFace({ card, hidden }: { card: Card; hidden?: boolean }) {
 }
 
 export function BlackjackGame() {
-  const [state, setState] = useState<GameState | null>(null);
+  const [state, setState] = useState<RoundState>(() =>
+    startBetting(INITIAL_FUNDS)
+  );
+  const [betInput, setBetInput] = useState(String(DEFAULT_BET));
 
   useEffect(() => {
-    setState(createGame(createShuffledDeck()));
-  }, []);
-
-  useEffect(() => {
-    if (!state || state.phase !== "dealer-turn") return;
+    if (state.phase !== "dealer-turn") return;
 
     const timer = setTimeout(() => {
-      setState((current) => (current ? dealerStep(current) : current));
+      setState((current) => dealerStep(current));
     }, DEALER_STEP_DELAY_MS);
 
     return () => clearTimeout(timer);
   }, [state]);
 
+  function confirmBet() {
+    const amount = Number(betInput);
+    if (!isValidBet(state.funds, amount)) return;
+    setState((current) => placeBet(current, amount, createShuffledDeck()));
+  }
+
   function startNewRound() {
-    setState(createGame(createShuffledDeck()));
+    const next = startNextRound(state);
+    setBetInput(String(Math.min(DEFAULT_BET, next.funds)));
+    setState(next);
   }
 
-  if (!state) {
-    return (
-      <div className="flex w-full max-w-md flex-col items-center gap-6 py-16">
-        <h1 className="text-2xl font-semibold">블랙잭 한 판</h1>
-      </div>
-    );
-  }
-
-  const player = evaluateHand(state.playerCards);
-  const dealer = evaluateHand(state.dealerCards);
+  const hand = state.hand;
+  const player = hand ? evaluateHand(hand.playerCards) : null;
+  const dealer = hand ? evaluateHand(hand.dealerCards) : null;
+  const betAmount = Number(betInput);
 
   return (
     <div className="flex w-full max-w-md flex-col items-center gap-6 py-16">
       <h1 className="text-2xl font-semibold">블랙잭 한 판</h1>
+      <p className="text-sm text-muted-foreground">보유 자금 {state.funds}</p>
 
-      <section aria-label="딜러 카드" className="flex flex-col items-center gap-2">
-        <p className="text-sm text-muted-foreground">
-          딜러 {state.dealerHoleRevealed ? dealer.total : ""}
-        </p>
-        <div className="flex gap-2">
-          {state.dealerCards.map((card, index) => (
-            <CardFace
-              key={index}
-              card={card}
-              hidden={index === 1 && !state.dealerHoleRevealed}
+      {state.phase === "betting" && state.funds > 0 && (
+        <div className="flex flex-col items-center gap-2">
+          <label className="flex items-center gap-2 text-sm">
+            배팅액
+            <input
+              type="number"
+              min={1}
+              max={state.funds}
+              step={1}
+              value={betInput}
+              onChange={(event) => setBetInput(event.target.value)}
+              className="w-24 rounded border border-border px-2 py-1 text-black"
             />
-          ))}
+          </label>
+          <Button
+            onClick={confirmBet}
+            disabled={!isValidBet(state.funds, betAmount)}
+          >
+            배팅 확정
+          </Button>
         </div>
-      </section>
+      )}
 
-      <section aria-label="플레이어 카드" className="flex flex-col items-center gap-2">
-        <p className="text-sm text-muted-foreground">플레이어 {player.total}</p>
-        <div className="flex gap-2">
-          {state.playerCards.map((card, index) => (
-            <CardFace key={index} card={card} />
-          ))}
-        </div>
-      </section>
+      {state.phase === "betting" && state.funds <= 0 && (
+        <p role="status" className="text-sm text-muted-foreground">
+          자금이 모두 소진되어 더 이상 배팅할 수 없습니다.
+        </p>
+      )}
+
+      {hand && player && dealer && (
+        <>
+          <section
+            aria-label="딜러 카드"
+            className="flex flex-col items-center gap-2"
+          >
+            <p className="text-sm text-muted-foreground">
+              딜러 {hand.dealerHoleRevealed ? dealer.total : ""}
+            </p>
+            <div className="flex gap-2">
+              {hand.dealerCards.map((card, index) => (
+                <CardFace
+                  key={index}
+                  card={card}
+                  hidden={index === 1 && !hand.dealerHoleRevealed}
+                />
+              ))}
+            </div>
+          </section>
+
+          <section
+            aria-label="플레이어 카드"
+            className="flex flex-col items-center gap-2"
+          >
+            <p className="text-sm text-muted-foreground">
+              플레이어 {player.total} (배팅액 {state.bet})
+            </p>
+            <div className="flex gap-2">
+              {hand.playerCards.map((card, index) => (
+                <CardFace key={index} card={card} />
+              ))}
+            </div>
+          </section>
+        </>
+      )}
 
       {state.phase === "player-turn" && (
         <div className="flex gap-3">
@@ -121,10 +175,10 @@ export function BlackjackGame() {
         <p className="text-sm text-muted-foreground">딜러가 카드를 받는 중...</p>
       )}
 
-      {state.phase === "result" && state.outcome && (
+      {state.phase === "result" && hand?.outcome && (
         <div className="flex flex-col items-center gap-3">
           <p className="text-xl font-semibold" role="status">
-            {OUTCOME_LABEL[state.outcome]}
+            {OUTCOME_LABEL[hand.outcome]}
           </p>
           <Button onClick={startNewRound}>새 판 시작</Button>
         </div>

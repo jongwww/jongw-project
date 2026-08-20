@@ -19,6 +19,12 @@ function mockDeck(...cards: Card[]) {
   vi.mocked(createShuffledDeck).mockReturnValue(cards);
 }
 
+function placeBet(amount: string) {
+  const input = screen.getByLabelText("배팅액");
+  fireEvent.change(input, { target: { value: amount } });
+  fireEvent.click(screen.getByRole("button", { name: "배팅 확정" }));
+}
+
 beforeEach(() => {
   vi.useFakeTimers();
 });
@@ -27,46 +33,43 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-test("새 판이 시작되면 플레이어 카드는 모두 보이고 딜러 카드 한 장은 가려진다", () => {
+test("처음에는 보유 자금과 배팅 입력이 보이고, 0으로는 배팅을 확정할 수 없다", () => {
+  render(<BlackjackGame />);
+
+  expect(screen.getByText("보유 자금 1000")).toBeInTheDocument();
+
+  const input = screen.getByLabelText("배팅액");
+  fireEvent.change(input, { target: { value: "0" } });
+  expect(screen.getByRole("button", { name: "배팅 확정" })).toBeDisabled();
+});
+
+test("배팅을 확정하면 카드가 배분되고 배팅액이 표시된다", () => {
   mockDeck(c("9"), c("8"), c("7"), c("6"));
 
   render(<BlackjackGame />);
+  placeBet("100");
 
+  expect(screen.getByText("플레이어 17 (배팅액 100)")).toBeInTheDocument();
   expect(screen.getByLabelText("가려진 카드")).toBeInTheDocument();
-  expect(screen.getByText("플레이어 17")).toBeInTheDocument();
-  expect(
-    screen.getByRole("button", { name: "히트" })
-  ).toBeInTheDocument();
 });
 
-test("히트로 21을 넘기면 딜러 턴 없이 바로 버스트 결과가 표시된다", () => {
+test("히트로 버스트하면 배팅액만큼 자금이 줄어든다", () => {
   mockDeck(c("K"), c("8"), c("7"), c("6"), c("Q"));
 
   render(<BlackjackGame />);
+  placeBet("100");
   fireEvent.click(screen.getByRole("button", { name: "히트" }));
 
   expect(screen.getByRole("status")).toHaveTextContent("패 (버스트)");
-  expect(
-    screen.getByRole("button", { name: "새 판 시작" })
-  ).toBeInTheDocument();
+  expect(screen.getByText("보유 자금 900")).toBeInTheDocument();
 });
 
-test("처음 받은 두 장이 21이면 선택 없이 즉시 블랙잭 승이 표시된다", () => {
-  mockDeck(c("A"), c("K"), c("9"), c("7"));
-
-  render(<BlackjackGame />);
-
-  expect(screen.getByRole("status")).toHaveTextContent("블랙잭 승");
-  expect(screen.queryByRole("button", { name: "히트" })).not.toBeInTheDocument();
-});
-
-test("스탠드하면 딜러 카드가 공개되고 딜러 턴을 거쳐 결과가 표시된다", async () => {
+test("스탠드해서 이기면 배팅액만큼 자금이 늘어난다", async () => {
   mockDeck(c("K"), c("Q"), c("5"), c("9"), c("3"));
 
   render(<BlackjackGame />);
+  placeBet("100");
   fireEvent.click(screen.getByRole("button", { name: "스탠드" }));
-
-  expect(screen.queryByLabelText("가려진 카드")).not.toBeInTheDocument();
 
   await act(async () => {
     await vi.advanceTimersByTimeAsync(1000);
@@ -76,17 +79,27 @@ test("스탠드하면 딜러 카드가 공개되고 딜러 턴을 거쳐 결과�
   });
 
   expect(screen.getByRole("status")).toHaveTextContent("승");
-  expect(screen.getByText("딜러 17")).toBeInTheDocument();
+  expect(screen.getByText("보유 자금 1100")).toBeInTheDocument();
 });
 
-test("결과 화면에서 새 판 시작을 누르면 다시 플레이어 턴으로 돌아간다", () => {
-  mockDeck(c("A"), c("K"), c("9"), c("7"));
-  render(<BlackjackGame />);
-  expect(screen.getByRole("status")).toHaveTextContent("블랙잭 승");
+test("자금을 모두 잃으면 새 판에서는 배팅 입력 대신 안내가 표시된다", () => {
+  mockDeck(c("8"), c("6"), c("9"), c("8"));
 
-  mockDeck(c("2"), c("3"), c("4"), c("5"));
+  render(<BlackjackGame />);
+  placeBet("1000");
+  fireEvent.click(screen.getByRole("button", { name: "스탠드" }));
+
+  act(() => {
+    vi.advanceTimersByTime(1000);
+  });
+
+  expect(screen.getByRole("status")).toHaveTextContent("패");
+  expect(screen.getByText("보유 자금 0")).toBeInTheDocument();
+
   fireEvent.click(screen.getByRole("button", { name: "새 판 시작" }));
 
-  expect(screen.getByRole("button", { name: "히트" })).toBeInTheDocument();
-  expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  expect(
+    screen.getByText("자금이 모두 소진되어 더 이상 배팅할 수 없습니다.")
+  ).toBeInTheDocument();
+  expect(screen.queryByLabelText("배팅액")).not.toBeInTheDocument();
 });
