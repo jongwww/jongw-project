@@ -3,6 +3,8 @@ import { expect, test } from "vitest";
 import {
   MAX_HANDS,
   advance,
+  canDoubleDown,
+  doubleDown,
   hit,
   isSessionOver,
   placeBet,
@@ -98,6 +100,34 @@ test("새 세션을 시작하면 시작 자금으로 되돌아가고 기록이 �
   const restarted = startNewSession(finished);
 
   expect(restarted).toEqual(startSession(1000));
+});
+
+test("히트한 뒤에는 더블다운을 선택할 수 없다", () => {
+  const started = placeBet(
+    startSession(1000),
+    100,
+    deckOf("2", "8", "7", "6", "5")
+  );
+
+  expect(canDoubleDown(started)).toBe(true);
+  const afterHit = hit(started);
+  expect(canDoubleDown(afterHit)).toBe(false);
+});
+
+test("더블다운한 판은 세션 기록에 2배로 오른 배팅액으로 남는다", () => {
+  const started = placeBet(
+    startSession(1000),
+    100,
+    deckOf("K", "8", "7", "6", "Q")
+  );
+
+  const next = doubleDown(started);
+
+  expect(next.phase).toBe("result");
+  expect(next.round.funds).toBe(800);
+  expect(next.records).toEqual([
+    { handNumber: 1, bet: 200, outcome: "player-bust", fundsAfter: 800 },
+  ]);
 });
 
 test("한 판 중에는 히트/스탠드/딜러 턴이 기존 스펙과 동일하게 동작한다", () => {

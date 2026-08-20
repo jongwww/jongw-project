@@ -24,6 +24,16 @@ export function isValidBet(funds: number, amount: number): boolean {
   return Number.isInteger(amount) && amount > 0 && amount <= funds;
 }
 
+export function canDoubleDown(state: RoundState): boolean {
+  return (
+    state.phase === "player-turn" &&
+    state.hand !== null &&
+    state.hand.playerCards.length === 2 &&
+    state.bet !== null &&
+    state.bet * 2 <= state.funds
+  );
+}
+
 function payout(bet: number, outcome: Outcome): number {
   switch (outcome) {
     case "player-blackjack":
@@ -75,6 +85,19 @@ export function stand(state: RoundState): RoundState {
 export function dealerStep(state: RoundState): RoundState {
   if (state.phase !== "dealer-turn" || !state.hand) return state;
   return withHand(state, engineDealerStep(state.hand));
+}
+
+export function doubleDown(state: RoundState): RoundState {
+  if (!canDoubleDown(state)) return state;
+
+  const doubled = { ...state, bet: state.bet! * 2 };
+  const afterHit = engineHit(state.hand!);
+
+  if (afterHit.phase === "result") {
+    return withHand(doubled, afterHit);
+  }
+
+  return withHand(doubled, engineStand(afterHit));
 }
 
 export function startNextRound(state: RoundState): RoundState {

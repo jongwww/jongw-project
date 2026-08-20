@@ -8,7 +8,9 @@ import { evaluateHand } from "@/lib/blackjack/hand";
 import { isValidBet } from "@/lib/blackjack/round";
 import {
   advance,
+  canDoubleDown,
   dealerStep,
+  doubleDown,
   hit,
   isSessionOver,
   placeBet,
@@ -182,6 +184,14 @@ export function BlackjackGame() {
           >
             스탠드
           </Button>
+          {canDoubleDown(state) && (
+            <Button
+              variant="outline"
+              onClick={() => setState((current) => doubleDown(current))}
+            >
+              더블다운
+            </Button>
+          )}
         </div>
       )}
 

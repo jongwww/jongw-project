@@ -1,5 +1,7 @@
 import {
+  canDoubleDown as roundCanDoubleDown,
   dealerStep as roundDealerStep,
+  doubleDown as roundDoubleDown,
   hit as roundHit,
   placeBet as roundPlaceBet,
   stand as roundStand,
@@ -93,6 +95,15 @@ export function stand(session: SessionState): SessionState {
 export function dealerStep(session: SessionState): SessionState {
   if (session.phase !== "dealer-turn") return session;
   return withRound(session, roundDealerStep(session.round));
+}
+
+export function canDoubleDown(session: SessionState): boolean {
+  return session.phase === "player-turn" && roundCanDoubleDown(session.round);
+}
+
+export function doubleDown(session: SessionState): SessionState {
+  if (session.phase !== "player-turn") return session;
+  return withRound(session, roundDoubleDown(session.round));
 }
 
 export function advance(session: SessionState): SessionState {

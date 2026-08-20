@@ -87,6 +87,57 @@ test("스탠드해서 이기면 배팅액만큼 자금이 늘어난다", async (
   expect(screen.getByText(/보유 자금 1100/)).toBeInTheDocument();
 });
 
+test("처음 두 장을 받은 직후에는 더블다운을 선택할 수 있고, 히트한 뒤에는 사라진다", () => {
+  mockDeck(c("2"), c("8"), c("7"), c("6"), c("5"));
+
+  render(<BlackjackGame />);
+  placeBet("100");
+
+  expect(screen.getByRole("button", { name: "더블다운" })).toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole("button", { name: "히트" }));
+
+  expect(
+    screen.queryByRole("button", { name: "더블다운" })
+  ).not.toBeInTheDocument();
+});
+
+test("자금이 배팅액의 2배보다 적으면 더블다운을 선택할 수 없다", () => {
+  mockDeck(c("9"), c("8"), c("7"), c("6"));
+
+  render(<BlackjackGame />);
+  placeBet("600");
+
+  expect(
+    screen.queryByRole("button", { name: "더블다운" })
+  ).not.toBeInTheDocument();
+});
+
+test("더블다운을 선택하면 배팅액이 2배가 되고 카드를 한 장만 받은 뒤 딜러 턴으로 넘어간다", () => {
+  mockDeck(c("2"), c("8"), c("7"), c("6"), c("5"));
+
+  render(<BlackjackGame />);
+  placeBet("100");
+  fireEvent.click(screen.getByRole("button", { name: "더블다운" }));
+
+  expect(screen.getByText("플레이어 15 (배팅액 200)")).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "히트" })).not.toBeInTheDocument();
+  expect(
+    screen.getByText("딜러가 카드를 받는 중...")
+  ).toBeInTheDocument();
+});
+
+test("더블다운으로 21을 넘으면 딜러 턴 없이 2배로 오른 배팅액만큼 즉시 잃는다", () => {
+  mockDeck(c("K"), c("8"), c("7"), c("6"), c("Q"));
+
+  render(<BlackjackGame />);
+  placeBet("100");
+  fireEvent.click(screen.getByRole("button", { name: "더블다운" }));
+
+  expect(screen.getByRole("status")).toHaveTextContent("패 (버스트)");
+  expect(screen.getByText(/보유 자금 800/)).toBeInTheDocument();
+});
+
 test("자금을 모두 잃으면 세션이 끝나고, 세션 결과 화면에 판별 기록과 요약이 보인다", () => {
   mockDeck(c("9"), c("7"), c("A"), c("K"));
 

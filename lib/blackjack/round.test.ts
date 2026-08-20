@@ -1,7 +1,9 @@
 import { expect, test } from "vitest";
 
 import {
+  canDoubleDown,
   dealerStep,
+  doubleDown,
   hit,
   isValidBet,
   placeBet,
@@ -113,6 +115,81 @@ test("무승부면 자금이 그대로 유지된다", () => {
   expect(finished.phase).toBe("result");
   expect(finished.hand?.outcome).toBe("push");
   expect(finished.funds).toBe(1000);
+});
+
+test("처음 두 장을 받은 직후이고 자금이 충분하면 더블다운을 선택할 수 있다", () => {
+  const started = placeBet(startBetting(1000), 100, deckOf("9", "8", "7", "6"));
+
+  expect(canDoubleDown(started)).toBe(true);
+});
+
+test("히트를 한 뒤에는 더블다운을 선택할 수 없다", () => {
+  const started = placeBet(
+    startBetting(1000),
+    100,
+    deckOf("2", "8", "7", "6", "5")
+  );
+
+  const afterHit = hit(started);
+
+  expect(canDoubleDown(afterHit)).toBe(false);
+});
+
+test("자금이 배팅액의 2배보다 적으면 더블다운을 선택할 수 없다", () => {
+  const started = placeBet(startBetting(150), 100, deckOf("9", "8", "7", "6"));
+
+  expect(canDoubleDown(started)).toBe(false);
+});
+
+test("더블다운을 선택하면 배팅액이 2배가 되고 카드를 정확히 한 장만 받는다", () => {
+  const started = placeBet(
+    startBetting(1000),
+    100,
+    deckOf("2", "8", "7", "6", "5")
+  );
+
+  const next = doubleDown(started);
+
+  expect(next.bet).toBe(200);
+  expect(next.hand?.playerCards).toEqual([c("2"), c("8"), c("5")]);
+  expect(next.phase).toBe("dealer-turn");
+  expect(next.hand?.dealerHoleRevealed).toBe(true);
+});
+
+test("더블다운으로 받은 카드로 21을 넘으면 딜러 턴 없이 2배 배팅액만큼 즉시 잃는다", () => {
+  const started = placeBet(
+    startBetting(1000),
+    100,
+    deckOf("K", "8", "7", "6", "Q")
+  );
+
+  const next = doubleDown(started);
+
+  expect(next.phase).toBe("result");
+  expect(next.hand?.outcome).toBe("player-bust");
+  expect(next.funds).toBe(800);
+});
+
+test("더블다운 후 딜러에게 지면 2배로 오른 배팅액만큼 자금이 줄어든다", () => {
+  const started = placeBet(
+    startBetting(1000),
+    100,
+    deckOf("2", "8", "7", "6", "5", "8")
+  );
+
+  const afterDouble = doubleDown(started);
+  const afterOneDraw = dealerStep(afterDouble);
+  const finished = dealerStep(afterOneDraw);
+
+  expect(finished.phase).toBe("result");
+  expect(finished.hand?.outcome).toBe("dealer-win");
+  expect(finished.funds).toBe(800);
+});
+
+test("유효하지 않은 더블다운 시도는 상태를 바꾸지 않는다", () => {
+  const state = startBetting(1000);
+
+  expect(doubleDown(state)).toEqual(state);
 });
 
 test("새 판을 시작하면 배팅과 카드는 초기화되고 자금은 유지된다", () => {
