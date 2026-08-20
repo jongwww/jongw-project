@@ -1,0 +1,112 @@
+import {
+  dealerStep as roundDealerStep,
+  hit as roundHit,
+  placeBet as roundPlaceBet,
+  stand as roundStand,
+  startBetting,
+  type RoundState,
+} from "./round";
+import type { Card, Outcome } from "./types";
+
+export type SessionPhase =
+  | "betting"
+  | "player-turn"
+  | "dealer-turn"
+  | "result"
+  | "session-over";
+
+export interface HandRecord {
+  handNumber: number;
+  bet: number;
+  outcome: Outcome;
+  fundsAfter: number;
+}
+
+export interface SessionState {
+  startingFunds: number;
+  round: RoundState;
+  handNumber: number;
+  records: HandRecord[];
+  phase: SessionPhase;
+}
+
+export const MAX_HANDS = 20;
+
+export function startSession(startingFunds: number): SessionState {
+  return {
+    startingFunds,
+    round: startBetting(startingFunds),
+    handNumber: 0,
+    records: [],
+    phase: "betting",
+  };
+}
+
+export function isSessionOver(session: SessionState): boolean {
+  return session.handNumber >= MAX_HANDS || session.round.funds <= 0;
+}
+
+function withRound(session: SessionState, round: RoundState): SessionState {
+  const justFinished =
+    session.round.phase !== "result" && round.phase === "result";
+
+  if (!justFinished) {
+    return { ...session, round, phase: round.phase };
+  }
+
+  const handNumber = session.handNumber + 1;
+  const record: HandRecord = {
+    handNumber,
+    bet: round.bet!,
+    outcome: round.hand!.outcome!,
+    fundsAfter: round.funds,
+  };
+
+  return {
+    ...session,
+    round,
+    handNumber,
+    records: [...session.records, record],
+    phase: "result",
+  };
+}
+
+export function placeBet(
+  session: SessionState,
+  amount: number,
+  deck: Card[]
+): SessionState {
+  if (session.phase !== "betting") return session;
+  return withRound(session, roundPlaceBet(session.round, amount, deck));
+}
+
+export function hit(session: SessionState): SessionState {
+  if (session.phase !== "player-turn") return session;
+  return withRound(session, roundHit(session.round));
+}
+
+export function stand(session: SessionState): SessionState {
+  if (session.phase !== "player-turn") return session;
+  return withRound(session, roundStand(session.round));
+}
+
+export function dealerStep(session: SessionState): SessionState {
+  if (session.phase !== "dealer-turn") return session;
+  return withRound(session, roundDealerStep(session.round));
+}
+
+export function advance(session: SessionState): SessionState {
+  if (session.phase !== "result") return session;
+  if (isSessionOver(session)) {
+    return { ...session, phase: "session-over" };
+  }
+  return {
+    ...session,
+    round: startBetting(session.round.funds),
+    phase: "betting",
+  };
+}
+
+export function startNewSession(session: SessionState): SessionState {
+  return startSession(session.startingFunds);
+}

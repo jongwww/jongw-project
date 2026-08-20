@@ -16,8 +16,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "블랙잭 한 판",
-  description: "딜러를 상대로 블랙잭 한 판을 연습하는 웹 게임",
+  title: "블랙잭 세션",
+  description: "딜러를 상대로 배팅하며 블랙잭 세션을 연습하는 웹 게임",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

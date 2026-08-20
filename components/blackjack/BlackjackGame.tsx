@@ -5,16 +5,18 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { createShuffledDeck } from "@/lib/blackjack/deck";
 import { evaluateHand } from "@/lib/blackjack/hand";
+import { isValidBet } from "@/lib/blackjack/round";
 import {
+  advance,
   dealerStep,
   hit,
-  isValidBet,
+  isSessionOver,
   placeBet,
   stand,
-  startBetting,
-  startNextRound,
-  type RoundState,
-} from "@/lib/blackjack/round";
+  startNewSession,
+  startSession,
+  type SessionState,
+} from "@/lib/blackjack/session";
 import type { Card, Outcome } from "@/lib/blackjack/types";
 
 const OUTCOME_LABEL: Record<Outcome, string> = {
@@ -55,8 +57,8 @@ function CardFace({ card, hidden }: { card: Card; hidden?: boolean }) {
 }
 
 export function BlackjackGame() {
-  const [state, setState] = useState<RoundState>(() =>
-    startBetting(INITIAL_FUNDS)
+  const [state, setState] = useState<SessionState>(() =>
+    startSession(INITIAL_FUNDS)
   );
   const [betInput, setBetInput] = useState(String(DEFAULT_BET));
 
@@ -72,34 +74,46 @@ export function BlackjackGame() {
 
   function confirmBet() {
     const amount = Number(betInput);
-    if (!isValidBet(state.funds, amount)) return;
+    if (!isValidBet(state.round.funds, amount)) return;
     setState((current) => placeBet(current, amount, createShuffledDeck()));
   }
 
-  function startNewRound() {
-    const next = startNextRound(state);
-    setBetInput(String(Math.min(DEFAULT_BET, next.funds)));
+  function goToNextStep() {
+    const next = advance(state);
+    if (next.phase === "betting") {
+      setBetInput(String(Math.min(DEFAULT_BET, next.round.funds)));
+    }
     setState(next);
   }
 
-  const hand = state.hand;
+  function startOverWithNewSession() {
+    const next = startNewSession(state);
+    setBetInput(String(Math.min(DEFAULT_BET, next.round.funds)));
+    setState(next);
+  }
+
+  const round = state.round;
+  const hand = round.hand;
   const player = hand ? evaluateHand(hand.playerCards) : null;
   const dealer = hand ? evaluateHand(hand.dealerCards) : null;
   const betAmount = Number(betInput);
+  const sessionOver = isSessionOver(state);
 
   return (
     <div className="flex w-full max-w-md flex-col items-center gap-6 py-16">
-      <h1 className="text-2xl font-semibold">블랙잭 한 판</h1>
-      <p className="text-sm text-muted-foreground">보유 자금 {state.funds}</p>
+      <h1 className="text-2xl font-semibold">블랙잭 세션</h1>
+      <p className="text-sm text-muted-foreground">
+        {state.handNumber}판째 · 보유 자금 {round.funds}
+      </p>
 
-      {state.phase === "betting" && state.funds > 0 && (
+      {state.phase === "betting" && round.funds > 0 && (
         <div className="flex flex-col items-center gap-2">
           <label className="flex items-center gap-2 text-sm">
             배팅액
             <input
               type="number"
               min={1}
-              max={state.funds}
+              max={round.funds}
               step={1}
               value={betInput}
               onChange={(event) => setBetInput(event.target.value)}
@@ -108,20 +122,20 @@ export function BlackjackGame() {
           </label>
           <Button
             onClick={confirmBet}
-            disabled={!isValidBet(state.funds, betAmount)}
+            disabled={!isValidBet(round.funds, betAmount)}
           >
             배팅 확정
           </Button>
         </div>
       )}
 
-      {state.phase === "betting" && state.funds <= 0 && (
+      {state.phase === "betting" && round.funds <= 0 && (
         <p role="status" className="text-sm text-muted-foreground">
           자금이 모두 소진되어 더 이상 배팅할 수 없습니다.
         </p>
       )}
 
-      {hand && player && dealer && (
+      {hand && player && dealer && state.phase !== "session-over" && (
         <>
           <section
             aria-label="딜러 카드"
@@ -146,7 +160,7 @@ export function BlackjackGame() {
             className="flex flex-col items-center gap-2"
           >
             <p className="text-sm text-muted-foreground">
-              플레이어 {player.total} (배팅액 {state.bet})
+              플레이어 {player.total} (배팅액 {round.bet})
             </p>
             <div className="flex gap-2">
               {hand.playerCards.map((card, index) => (
@@ -180,7 +194,50 @@ export function BlackjackGame() {
           <p className="text-xl font-semibold" role="status">
             {OUTCOME_LABEL[hand.outcome]}
           </p>
-          <Button onClick={startNewRound}>새 판 시작</Button>
+          <Button onClick={goToNextStep}>
+            {sessionOver ? "세션 결과 보기" : "다음 판"}
+          </Button>
+        </div>
+      )}
+
+      {state.phase === "session-over" && (
+        <div className="flex w-full flex-col items-center gap-4">
+          <p role="status" className="text-xl font-semibold">
+            세션 종료
+          </p>
+          <dl className="grid grid-cols-2 gap-x-6 gap-y-1 text-sm">
+            <dt className="text-muted-foreground">총 진행 판 수</dt>
+            <dd>{state.records.length}</dd>
+            <dt className="text-muted-foreground">시작 자금</dt>
+            <dd>{state.startingFunds}</dd>
+            <dt className="text-muted-foreground">최종 자금</dt>
+            <dd>{round.funds}</dd>
+            <dt className="text-muted-foreground">순손익</dt>
+            <dd>{round.funds - state.startingFunds}</dd>
+          </dl>
+
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-muted-foreground">
+                <th className="text-left">판</th>
+                <th className="text-left">배팅액</th>
+                <th className="text-left">결과</th>
+                <th className="text-left">종료 후 자금</th>
+              </tr>
+            </thead>
+            <tbody>
+              {state.records.map((record) => (
+                <tr key={record.handNumber}>
+                  <td>{record.handNumber}</td>
+                  <td>{record.bet}</td>
+                  <td>{OUTCOME_LABEL[record.outcome]}</td>
+                  <td>{record.fundsAfter}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+
+          <Button onClick={startOverWithNewSession}>새 세션 시작</Button>
         </div>
       )}
     </div>
